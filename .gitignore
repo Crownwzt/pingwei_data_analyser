@@ -5,33 +5,33 @@
 *.parquet
 *.h5
 
-# 程序生成报表
-report.html
-report.txt
-report.md
+# # 程序生成报表
+# report.html
+# report.txt
+# report.md
 
-# 图表图片文件夹
-plots/
-*.png
-*.jpg
-*.svg
+# # 图表图片文件夹
+# plots/
+# *.png
+# *.jpg
+# *.svg
 
-# 临时备份文件
-.~*
-*~
+# # 临时备份文件
+# .~*
+# *~
 
-# Python缓存
-__pycache__/
-*.pyc
-*.pyd
-*.pyo
+# # Python缓存
+# __pycache__/
+# *.pyc
+# *.pyd
+# *.pyo
 
-# 模型权重
-*.pth
-*.pt
-*.pkl
-*.npz
+# # 模型权重
+# *.pth
+# *.pt
+# *.pkl
+# *.npz
 
-# VS Code配置
-.vscode/
-.DS_Store
+# # VS Code配置
+# .vscode/
+# .DS_Store
