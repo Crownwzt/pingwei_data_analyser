@@ -900,4 +900,6 @@ def _cli() -> None:
 
 
 if __name__ == "__main__":
+    # # debug
+    # "/data/ztwen2/project_dir/pingwei_data_analyser/2025-2026市场情况"
     _cli()
