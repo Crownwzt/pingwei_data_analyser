@@ -100,4 +100,3 @@ pingwei_data_analyser/
 - **峰平谷划分**：`_to_datetime` 函数中 `_seg(h)`，默认 8-11、18-21 为峰，0-6 为谷，其余为平
 - **散点图因子数**：`plot_correlation` 中 `top_factors = ... .head(4)`
 - **直方图分箱**：`plot_overview` 中 `bins=50`
-## 文档同步：同步feature分支完整README
