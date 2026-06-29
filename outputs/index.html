@@ -1,0 +1,66 @@
+<!DOCTYPE html><html lang='zh-CN'><head><meta charset='UTF-8'><title>电价预测项目总览</title><style>
+body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; max-width: 1200px;
+       margin: 30px auto; padding: 0 24px; background: #f7f8fa; color: #2c3e50; }
+h1 { color: #1f3a5f; border-bottom: 4px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2c3e50; margin-top: 32px; border-left: 5px solid #3498db; padding-left: 14px; }
+h3 { color: #34495e; margin-top: 22px; }
+.meta { background:#ecf0f1; padding:14px 18px; border-radius:6px; margin:14px 0; }
+.insight { background:white; padding:14px 18px; border-left:4px solid #16a085;
+           border-radius:4px; margin:12px 0; }
+.warn { background:#fff4e3; padding:14px 18px; border-left:5px solid #e67e22;
+        border-radius:6px; margin:14px 0; }
+table { border-collapse:collapse; width:100%; background:white; margin:14px 0;
+        box-shadow:0 2px 4px rgba(0,0,0,0.08); }
+th, td { border:1px solid #dde2e7; padding:8px 12px; font-size:13px; }
+th { background:#3498db; color:white; text-align:center; }
+td.num { font-family:Consolas,monospace; text-align:right; }
+td.center { text-align:center; }
+.winner { background:#d5f5e3 !important; font-weight:600; }
+.loser { background:#fadbd8 !important; }
+.leak { background:#fcf3cf !important; }
+code { background:#ecf0f1; padding:2px 6px; border-radius:3px; }
+img { max-width:100%; border:1px solid #ddd; border-radius:6px;
+      box-shadow:0 2px 8px rgba(0,0,0,0.12); margin:10px 0; }
+.small { color:#7f8c8d; font-size:12px; }
+.nav { background:#34495e; padding:10px; border-radius:6px; margin:0 0 20px 0; }
+.nav a { color:white; margin-right:18px; text-decoration:none; }
+.nav a:hover { text-decoration:underline; }
+</style></head><body>
+<div class="nav">
+  <a href="index.html">🏠 总览</a>
+  <a href="01_cleaning.html">① 数据清洗</a>
+  <a href="02_split.html">② 数据划分</a>
+  <a href="03_correlation.html">③ 相关性分析</a>
+  <a href="04_training.html">④ 模型训练</a>
+  <a href="05_evaluation.html">⑤ 模型评测</a>
+</div>
+<h1>电价预测项目总览</h1>
+    <div class='meta'>
+    <p><strong>项目</strong>: 平湾电力市场 XGBoost 实时电价预测</p>
+    <p><strong>数据范围</strong>: 仅 2025 年 (2026 数据忽略)</p>
+    <p><strong>切分</strong>: 训练 2025-01~10 / 验证 11 / 测试 12 (方案 B)</p>
+    <p><strong>终版测试集</strong>: MAE = <strong>33.65</strong> 元/MWh
+       (vs B7' 日前价 34.79, RMSE 改进 +8.59%)</p>
+    </div>
+
+    <h2>报告导航</h2>
+    <ul>
+    <li><a href='01_cleaning.html'>① 数据清洗报告</a> — 清洗策略 / 缺失率 / 异常过滤</li>
+    <li><a href='02_split.html'>② 数据划分报告</a> — 4 切分方案对比 + 选定方案 B 的理由</li>
+    <li><a href='03_correlation.html'>③ 相关性分析报告</a> — 与目标 Pearson + 数据泄漏识别 + 业务解读</li>
+    <li><a href='04_training.html'>④ 模型训练报告</a> — 残差预测设计 + 抗过拟合超参 + 训练曲线 + 特征重要性</li>
+    <li><a href='05_evaluation.html'>⑤ 模型评测报告</a> — 时序/散点/误差/分段诊断 + Naive baseline 对比</li>
+    </ul>
+
+    <h2>产物</h2>
+    <ul>
+    <li>清洗缓存: <code>outputs/cleaned_data.pkl</code></li>
+    <li>切分配置: <code>outputs/split.json</code></li>
+    <li>生产模型: <code>outputs/model.joblib</code></li>
+    <li>评估指标: <code>outputs/metrics.pkl</code></li>
+    <li>所有图表: <code>outputs/plots/</code></li>
+    </ul>
+
+    <h2>重跑指令</h2>
+    <p><code>bash run.sh --all</code> 一键全流程，或 <code>bash run.sh --module &lt;name&gt;</code> 单模块运行。</p>
+    </body></html>
