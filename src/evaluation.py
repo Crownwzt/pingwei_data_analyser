@@ -509,6 +509,8 @@ def make_html(payload: Dict, df_te: pd.DataFrame, baseline_df: pd.DataFrame,
     # 五、最终诚实结论
     test_gain = m_te["mae_gain%"]
     test_rmse_gain = m_te["rmse_gain%"]
+    gap = payload["metrics"]["train"]["residual_R2"] - payload["metrics"]["test"]["residual_R2"]
+
     p.append("<h2>五、诚实结论与适用建议</h2>")
     p.append(f"""
     <div class='warn'>
@@ -519,6 +521,10 @@ def make_html(payload: Dict, df_te: pd.DataFrame, baseline_df: pd.DataFrame,
     <li>测试集 RMSE 改进 <strong>{test_rmse_gain:+.2f}%</strong> —
         模型在抑制大偏差上的能力比 MAE 体现更明显</li>
     <li>训练 → 测试 R² gap = {gap:+.3f}, 仍存在过拟合但已通过强正则缓解</li>
+    <li><strong>方向命中率</strong>：训练 {payload['metrics']['train']['sign_hit']*100:.1f}% →
+        验证 {payload['metrics']['val']['sign_hit']*100:.1f}% →
+        测试 <strong>{m_te['sign_hit']*100:.1f}%</strong> (低于随机 50%) —
+        <em>方向信号泛化失效，模型收益来自幅度收缩（α={payload['alpha']:.2f}）而非方向修正</em></li>
     </ul></div>
 
     <div class='insight'>
@@ -526,7 +532,8 @@ def make_html(payload: Dict, df_te: pd.DataFrame, baseline_df: pd.DataFrame,
     <ul>
     <li><strong>追求最低 MAE</strong>：日前价直接预测 (无需模型，零成本)</li>
     <li><strong>追求最低 RMSE / 控制尾部风险</strong>：本项目 XGB 生产模型，对大偏差抑制更强</li>
-    <li><strong>追求修正方向</strong>：本模型方向命中率 {m_te['sign_hit']*100:.1f}% (高于随机 50%)</li>
+    <li><strong>注意</strong>：模型对"实时价 vs 日前价偏离方向"判断能力弱于随机，
+        不建议用作定向修正信号</li>
     </ul></div>
 
     <div class='insight'>

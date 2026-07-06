@@ -311,64 +311,62 @@ def plot_training(models: List[XGBRegressor], feature_cols: List[str],
 # 特征公式表（用于 HTML 详细文档）
 # ---------------------------------------------------------------------------
 FEATURE_SPECS = [
-    # (类别, 特征名, 计算公式, 业务含义)
-    ("周期编码 一阶", "小时_sin / 小时_cos", "sin(2π·h/24), cos(2π·h/24)",
+    # (类别, 维度, 特征名, 计算公式, 业务含义)
+    ("时间原始", 5, "年 / 月 / 日 / 小时 / 星期", "datetime 拆解",
+     "XGB 原生时间特征（树切分友好），与周期编码互补"),
+    ("周期编码 一阶", 2, "小时_sin / 小时_cos", "sin(2π·h/24), cos(2π·h/24)",
      "把离散小时映射到圆周上，让 23 时与 0 时距离=1"),
-    ("周期编码 一阶", "月_sin / 月_cos", "sin(2π·m/12), cos(2π·m/12)",
+    ("周期编码 一阶", 2, "月_sin / 月_cos", "sin(2π·m/12), cos(2π·m/12)",
      "月份周期 (12 月 ↔ 1 月相邻)"),
-    ("周期编码 一阶", "星期_sin / 星期_cos", "sin(2π·dow/7), cos(2π·dow/7)",
+    ("周期编码 一阶", 2, "星期_sin / 星期_cos", "sin(2π·dow/7), cos(2π·dow/7)",
      "周节律 (周日 ↔ 周一相邻)"),
-    ("周期编码 二阶谐波", "小时_sin2 / 小时_cos2", "sin(2·2π·h/24), cos(2·2π·h/24)",
+    ("周期编码 二阶谐波", 2, "小时_sin2 / 小时_cos2", "sin(2·2π·h/24), cos(2·2π·h/24)",
      "半日周期 (捕捉'上午峰 vs 晚间峰'差异, 实验验证 -0.32 元)"),
-    ("周期编码 二阶谐波", "月_sin2 / 月_cos2", "sin(2·2π·m/12), cos(2·2π·m/12)",
+    ("周期编码 二阶谐波", 2, "月_sin2 / 月_cos2", "sin(2·2π·m/12), cos(2·2π·m/12)",
      "半年周期 (捕捉春秋 vs 夏冬的电价差异)"),
-    ("季节标签", "季节_春 / 夏 / 秋 / 冬", "one-hot: 春 3-5 月, 夏 6-8 月, 秋 9-11 月, 冬 12/1/2 月",
+    ("季节标签", 4, "季节_春 / 夏 / 秋 / 冬", "one-hot: 春 3-5 月, 夏 6-8 月, 秋 9-11 月, 冬 12/1/2 月",
      "季节 one-hot (供暖/空调负荷特征, 与二阶月谐波互补)"),
-    ("工作日标签", "是否工作日", "~是否周末",
+    ("工作日标签", 2, "是否周末 / 是否工作日", "周末 0/1; 工作日 = ~周末",
      "工作日 vs 周末显式编码, 与 XGB 树切分对齐"),
-    ("煤价特征", "bspi_current", "BSPI 环渤海动力煤 5500K 指数当前价 (元/吨)",
+    ("煤价特征", 1, "bspi_current", "BSPI 环渤海动力煤 5500K 指数当前价 (元/吨)",
      "煤电成本占火电边际成本 70%+, 直接驱动火电报价下限"),
-    ("煤价特征", "bspi_ma7", "coal_max_price.rolling(30d).mean()",
+    ("煤价特征", 1, "bspi_ma7", "coal_max_price.rolling(30d).mean()",
      "近 30 天煤价均值, 平滑短期波动"),
-    ("煤价特征", "bspi_diff30d", "coal_max_price - coal_max_price.shift(30d)",
+    ("煤价特征", 1, "bspi_diff30d", "coal_max_price - coal_max_price.shift(30d)",
      "30 天前对比, 捕捉中期燃料成本趋势"),
-    ("煤价特征", "bspi_yoy", "bl 字段 (同比涨跌幅 %)",
+    ("煤价特征", 1, "bspi_yoy", "bl 字段 (同比涨跌幅 %)",
      "长周期成本预期信号"),
-    ("天气特征 F组", "ghi_lag1d / ghi_diff1d", "昨日同时刻辐射 / 日际辐射变化",
+    ("天气特征 F组", 2, "ghi_lag1d / ghi_diff1d", "昨日同时刻辐射 / 日际辐射变化",
      "昨日辐射高 → 今日光伏预期高 → 新能源挤压火电 → 电价低"),
-    ("天气特征 F组", "wind_speed_lag1d / wind_speed_diff1d", "昨日同时刻风速 / 日际风速变化",
+    ("天气特征 F组", 2, "wind_speed_lag1d / wind_speed_diff1d", "昨日同时刻风速 / 日际风速变化",
      "昨日风强 → 今日风电预期高 → 边际机组成本低"),
-    ("天气特征 F组", "t2m_lag1d / t2m_diff1d", "昨日同时刻温度 / 日际温差",
+    ("天气特征 F组", 2, "t2m_lag1d / t2m_diff1d", "昨日同时刻温度 / 日际温差",
      "温度突变 (寒潮/热浪) → 负荷冲击 → 电价波动"),
-    ("天气特征 F组", "tcc_lag1d / tcc_diff1d", "昨日同时刻云量 / 日际云量变化",
+    ("天气特征 F组", 2, "tcc_lag1d / tcc_diff1d", "昨日同时刻云量 / 日际云量变化",
      "云量影响光伏出力稳定性"),
-    ("target 滞后", "target_lag_24h", "y.shift(24)",
+    ("target 滞后", 1, "target_lag_24h", "y.shift(24)",
      "1 天前同时刻实时价"),
-    ("target 滞后", "target_lag_48/72/120/168h", "y.shift({48,72,120,168})",
+    ("target 滞后", 4, "target_lag_48/72/120/168h", "y.shift({48,72,120,168})",
      "2/3/5/7 天前同时刻"),
-    ("rolling", "target_roll_mean_24_lag24",
+    ("rolling", 1, "target_roll_mean_24_lag24",
      "y.shift(24).rolling(24).mean()",
      "过去 24 小时均价 (窗口 lag_24~lag_47, 永不碰当前)"),
-    ("rolling", "target_roll_std_24_lag24",
+    ("rolling", 1, "target_roll_std_24_lag24",
      "y.shift(24).rolling(24).std()",
      "过去 24 小时波动幅度"),
-    ("rolling", "target_roll_mean_168_lag24",
+    ("rolling", 1, "target_roll_mean_168_lag24",
      "y.shift(24).rolling(168).mean()",
      "过去 7 天均价 (窗口 lag_24~lag_191)"),
-    ("差分", "target_yest_vs_lastweek",
+    ("差分", 1, "target_yest_vs_lastweek",
      "y.shift(24) - y.shift(168)",
      "昨日 vs 上周同日 偏差，捕捉短期趋势"),
-    ("时段 one-hot", "时段_峰 / 时段_平 / 时段_谷",
+    ("时段 one-hot", 3, "时段_峰 / 时段_平 / 时段_谷",
      "(时段=={'峰','平','谷'}).astype(int)",
      "峰: 8-11 + 18-21; 谷: 0-6; 其余平"),
-    ("业务衍生", "新能源渗透率_日前",
-     "新能源_日前 / 省调负荷_日前  (除零置 0)",
-     "边际机组成本核心驱动 (光伏/风电占比越高，电价越低)"),
-    ("业务衍生", "竞价空间紧张度_日前",
-     "竞价空间_日前 / 省调负荷_日前  (除零置 0)",
-     "供需紧张度 (空间越小，高成本机组越易入清算)"),
-    ("原始日前列",
-     "日前统一结算点电价 / 日前节点电价 / 省调负荷_日前 / 新能源_日前 / 光伏_日前 / 风电_日前 / 水电_日前 / 竞价空间_日前 / 非市场化出力_日前 / 外来送负荷_日前 / 发电总出力_日前",
+    ("业务衍生", 2, "新能源渗透率_日前 / 竞价空间紧张度_日前",
+     "新能源_日前/省调负荷_日前; 竞价空间_日前/省调负荷_日前 (除零置0)",
+     "边际机组成本核心驱动 (新能源占比↑电价↓; 空间↓高成本机组入清)"),
+    ("原始日前列", 12, "日前统一结算点电价 / 日前节点电价 / 负荷率(%) / 省调负荷_日前 / 外来送负荷_日前 / 新能源_日前 / 水电_日前 / 光伏_日前 / 风电_日前 / 发电总出力_日前 / 非市场化出力_日前 / 竞价空间_日前",
      "原值, D-1 14:00 出清后已知", "day-ahead 合法的供需特征"),
 ]
 
@@ -544,11 +542,15 @@ def make_html(models: List[XGBRegressor], alpha_star: float, splits,
              "所有 target 滞后/滚动/差分严格 ≥ 24 小时，"
              "保证 day-ahead 场景下不引入未来信息。</p>")
     p.append("<table>")
-    p.append("<tr><th>类别</th><th>特征名</th><th>计算公式</th><th>业务含义</th></tr>")
-    for cat, name, formula, why in FEATURE_SPECS:
-        p.append(f"<tr><td>{cat}</td><td><code>{name}</code></td>"
+    p.append("<tr><th>类别</th><th>维度</th><th>特征名</th><th>计算公式</th><th>业务含义</th></tr>")
+    total_dims = 0
+    for cat, dim, name, formula, why in FEATURE_SPECS:
+        p.append(f"<tr><td>{cat}</td><td class='num'>{dim}</td><td><code>{name}</code></td>"
                  f"<td><code>{formula}</code></td>"
                  f"<td class='small'>{why}</td></tr>")
+        total_dims += dim
+    p.append(f"<tr class='total'><td colspan='2'><strong>合计</strong></td>"
+             f"<td colspan='3'><strong>{total_dims} 个特征</strong></td></tr>")
     p.append("</table>")
 
     p.append("<h3>显式禁用列 (数据泄漏 / 未来信息)</h3>")

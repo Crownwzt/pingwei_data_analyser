@@ -81,7 +81,13 @@ def _read_supply_one(path: str) -> pd.DataFrame:
 
 
 def _to_datetime(df: pd.DataFrame) -> pd.DataFrame:
-    """将 日期+时间 拼成 datetime，并衍生年/月/日/小时/星期/时段。"""
+    """将 日期+时间 拼成 datetime，并衍生年/月/日/小时/星期/时段。
+
+    电力交易数据约定：
+      "日期=D+1, 时间=00:00:00" 实际含义是 "D 日 24:00:00" (当日最后一个时段结束点)。
+      直接按字面日期解析会让每月末尾多出 1 个"孤儿"点。
+      修复：把这类点回归到 (D+1 日) 00:00:00 - 15min = D 日 23:45:00
+    """
     df = df.copy()
     if pd.api.types.is_datetime64_any_dtype(df["日期"]):
         date_str = df["日期"].dt.strftime("%Y-%m-%d")
@@ -94,6 +100,30 @@ def _to_datetime(df: pd.DataFrame) -> pd.DataFrame:
     time_str = time_str.loc[mask]
     df["datetime"] = pd.to_datetime(date_str + " " + time_str, errors="coerce")
     df = df.dropna(subset=["datetime"]).sort_values("datetime").reset_index(drop=True)
+
+    # ★ 修复电力交易时间约定
+    # 原始 Excel 里 "日期=D+1, 时间=00:00" 是 "D 日最后一个 15min 时段 [23:45, 24:00) 的结束点"
+    # 它与 "D 日 23:45" 是【不同时段】(实测价格不同, 例如 1/30 23:45=280 元 vs 1/31 00:00=250 元)
+    # 需保留其数据, 但归到当月最后一天 → 具体做法:
+    #   将 "D+1 00:00" 的 datetime 减 1 分钟 → "D 23:59"
+    #   这样它既保留独立性、又归属到 D 日, 逐日聚合时归入 D 日的第 24 个小时
+    if len(df) > 0:
+        is_midnight = ((df["datetime"].dt.hour == 0)
+                        & (df["datetime"].dt.minute == 0)
+                        & (df["datetime"].dt.second == 0))
+        # 只有那些"当日仅此一个点"的 00:00 才是孤儿 (真正的月末闭合时段)
+        day_counts = df["datetime"].dt.floor("D").value_counts()
+        is_orphan_day = df["datetime"].dt.floor("D").map(day_counts) == 1
+        orphan_mask = is_midnight & is_orphan_day
+        n_orphans = int(orphan_mask.sum())
+        if n_orphans > 0:
+            # 减 1 分钟归到前一日 23:59, 归属正确又不与前一日 23:45 冲突
+            df.loc[orphan_mask, "datetime"] = (
+                df.loc[orphan_mask, "datetime"] - pd.Timedelta(minutes=1)
+            )
+            df = df.sort_values("datetime").reset_index(drop=True)
+            print(f"[电力约定修复] 检测到 {n_orphans} 个月末孤儿点 (次日 00:00 = 前一日 24:00 结束点), "
+                  f"已归属到前一日 23:59 (保留独立数据)")
 
     df["年"] = df["datetime"].dt.year
     df["月"] = df["datetime"].dt.month
@@ -132,6 +162,8 @@ def load_data(data_dir: str) -> pd.DataFrame:
 CLEAN_RULES = [
     ("异常电价过滤", f"剔除 {TARGET_COL} ∉ [0, 2000] 元/MWh 样本",
      "极端报价多为出清异常 / 汇总行污染"),
+    ("整日污染剔除", "若某日有效样本数 < 24 (占理论 96 点的 25%) 则整日剔除",
+     "上游数据源采集失败的日子 (如 12/19 96 点里 95 个 NaN) 保留 1~几个点参与训练/评估均无意义"),
     ("负荷类缺失填充", "含「负荷/出力/新能源/光伏/风电/水电/竞价空间」关键字列用 forward fill",
      "电力负荷 15min 粒度高度连续，前向填充语义合理"),
     ("电价缺失剔除", "目标列缺失行直接 dropna",
@@ -142,6 +174,8 @@ CLEAN_RULES = [
      "无信号的列只会增加 XGB split 噪声"),
     ("2025 数据筛选", "仅保留 datetime.year == 2025 的样本",
      "任务设定：2026 数据忽略，只用 2025 全年做切分"),
+    ("剩余 NaN 兜底", "经过前 6 步仍有任意数值列 NaN 的行整行 dropna",
+     "前面已显式处理电价(剔除)/负荷类(ffill)，这一步保证未来若加入新列(气温/燃料价)缺失也不会污染特征矩阵"),
 ]
 
 
@@ -155,50 +189,143 @@ def clean(
     """执行清洗并返回 (cleaned_df, stats_dict)。"""
     df_in = df.copy()
     stats = {"n_before": len(df_in), "col_before": df_in.shape[1]}
+    # steps: 每步的明细 (步骤名, 前样本数, 本步剔除数, 后样本数, 子原因细分 dict)
+    steps: List[Dict] = []
 
     # 1) 异常电价过滤
+    n0 = len(df)
+    sub_reasons = {}
     if target_col in df.columns:
-        df = df.loc[
-            df[target_col].notna() &
-            (df[target_col] >= price_min) &
-            (df[target_col] <= price_max)
-        ]
-    stats["n_after_price_filter"] = len(df)
+        t = df[target_col]
+        sub_reasons["目标 NaN"]            = int(t.isna().sum())
+        sub_reasons[f"< {price_min:g}"]    = int((t.notna() & (t < price_min)).sum())
+        sub_reasons[f"> {price_max:g}"]    = int((t.notna() & (t > price_max)).sum())
+        df = df.loc[t.notna() & (t >= price_min) & (t <= price_max)]
+    n1 = len(df)
+    stats["n_after_price_filter"] = n1
+    steps.append({"name": "异常电价过滤", "before": n0, "after": n1,
+                  "dropped": n0 - n1, "sub": sub_reasons})
 
-    # 2) 负荷类前向填充
+    # 1.5) 整日污染剔除: 目标有效样本 < 24 (占 96 的 25%) 则整日剔除
+    #   前提: 我们已知一日理论 96 点 (15min 粒度); 允许 <96 是因为月末/月初边界
+    #   但 <24 就是"上游采集失败", 保留残点无意义 (如 12/19: 96 中 95 个 NaN)
+    n0 = len(df)
+    sub_reasons = {}
+    if target_col in df.columns and "datetime" in df.columns:
+        MIN_VALID = 24
+        # 用一个临时列判断: 该日目标非 NaN 数量
+        day_key = df["datetime"].dt.date
+        valid_per_day = df.groupby(day_key)[target_col].apply(lambda s: s.notna().sum())
+        bad_days = valid_per_day[valid_per_day < MIN_VALID].index.tolist()
+        if bad_days:
+            for d in bad_days:
+                n_kept = int((day_key == d).sum())
+                sub_reasons[str(d)] = f"{n_kept} 点 (原本仅 {int(valid_per_day[d])} 点有效)"
+            df = df.loc[~day_key.isin(bad_days)]
+    n1 = len(df)
+    stats["n_after_bad_day_drop"] = n1
+    steps.append({"name": "整日污染剔除", "before": n0, "after": n1,
+                  "dropped": n0 - n1, "sub": sub_reasons,
+                  "note": f"阈值: 单日有效样本 < 24 (占 96 的 25%) 则整日剔除"})
+
+    # 2) 负荷类前向填充（不改样本数，统计填充总单元数）
+    n0 = len(df)
     load_keys = ["负荷", "出力", "新能源", "光伏", "风电", "水电", "竞价空间", "非市场化"]
     load_cols = [c for c in df.columns if any(k in c for k in load_keys)]
+    sub_reasons = {}
+    n_filled_total = 0
     for c in load_cols:
         if pd.api.types.is_numeric_dtype(df[c]):
+            n_nan_before = int(df[c].isna().sum())
+            if n_nan_before > 0:
+                sub_reasons[c] = n_nan_before
+                n_filled_total += n_nan_before
             df[c] = df[c].ffill().fillna(0)
+    stats["n_filled_load"] = n_filled_total
+    steps.append({"name": "负荷类前向填充", "before": n0, "after": n0,
+                  "dropped": 0, "sub": sub_reasons,
+                  "note": f"填充 {n_filled_total:,} 个单元 (不剔除样本)"})
 
     # 3) 电价缺失剔除
+    n0 = len(df)
     price_cols = [c for c in df.columns if "电价" in c]
+    sub_reasons = {}
+    for c in price_cols:
+        if c in df.columns:
+            sub_reasons[c] = int(df[c].isna().sum())
     df = df.dropna(subset=[c for c in price_cols if c in df.columns])
-    stats["n_after_price_dropna"] = len(df)
+    n1 = len(df)
+    stats["n_after_price_dropna"] = n1
+    steps.append({"name": "电价缺失剔除", "before": n0, "after": n1,
+                  "dropped": n0 - n1, "sub": sub_reasons})
 
     # 4) 去重
+    n0 = len(df)
+    sub_reasons = {}
     if "datetime" in df.columns:
+        n_dup = int(df["datetime"].duplicated().sum())
+        sub_reasons["重复 datetime 行"] = n_dup
         df = df.drop_duplicates(subset=["datetime"], keep="first")
-    stats["n_after_dedup"] = len(df)
+    n1 = len(df)
+    stats["n_after_dedup"] = n1
+    steps.append({"name": "时序去重", "before": n0, "after": n1,
+                  "dropped": n0 - n1, "sub": sub_reasons})
 
-    # 5) 无效列
-    to_drop = []
+    # 5) 无效列 (剔列不剔行，单列统计原因)
+    n_col_before = df.shape[1]
+    to_drop_miss = []
+    to_drop_std0 = []
     keep_meta = {"datetime", "来源文件", "来源文件_供需", "时段"}
     for c in df.columns:
         if c in keep_meta:
             continue
         if df[c].isna().mean() > missing_thresh:
-            to_drop.append(c); continue
+            to_drop_miss.append(c); continue
         if pd.api.types.is_numeric_dtype(df[c]) and df[c].std() == 0:
-            to_drop.append(c)
+            to_drop_std0.append(c)
+    to_drop = to_drop_miss + to_drop_std0
     df = df.drop(columns=to_drop, errors="ignore")
     stats["dropped_cols"] = to_drop
+    stats["dropped_cols_miss"] = to_drop_miss
+    stats["dropped_cols_std0"] = to_drop_std0
+    steps.append({"name": "无效列剔除", "before": n_col_before,
+                  "after": df.shape[1], "dropped": len(to_drop),
+                  "sub": {f"缺失率>{int(missing_thresh*100)}%": len(to_drop_miss),
+                          "std=0":                              len(to_drop_std0)},
+                  "note": "剔除整列, 不剔除样本"})
 
     # 6) 仅 2025
-    df = df[df["datetime"].dt.year == 2025].reset_index(drop=True)
-    stats["n_after_2025"] = len(df)
+    n0 = len(df)
+    if "datetime" in df.columns:
+        years = df["datetime"].dt.year
+        sub_reasons = {f"{int(y)} 年": int((years == y).sum())
+                       for y in sorted(years.unique()) if y != 2025}
+        df = df[years == 2025].reset_index(drop=True)
+    else:
+        sub_reasons = {}
+    n1 = len(df)
+    stats["n_after_2025"] = n1
+    steps.append({"name": "仅 2025 数据筛选", "before": n0, "after": n1,
+                  "dropped": n0 - n1, "sub": sub_reasons})
 
+    # 7) 剩余 NaN 兜底
+    n0 = len(df)
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    # 按列统计还有几行带 NaN
+    sub_reasons = {}
+    for c in numeric_cols:
+        n_nan = int(df[c].isna().sum())
+        if n_nan > 0:
+            sub_reasons[c] = n_nan
+    df = df.dropna(subset=numeric_cols).reset_index(drop=True)
+    n1 = len(df)
+    stats["n_after_nan_safety"] = n1
+    stats["n_dropped_by_nan_safety"] = n0 - n1
+    steps.append({"name": "剩余 NaN 兜底", "before": n0, "after": n1,
+                  "dropped": n0 - n1, "sub": sub_reasons,
+                  "note": "前 6 步若有遗漏的 NaN 此处兜底剔除"})
+
+    stats["steps"] = steps
     stats["n_after"] = len(df)
     stats["col_after"] = df.shape[1]
     return df, stats
@@ -268,21 +395,61 @@ def make_html(stats: Dict, plot_paths: Dict[str, str],
                  f"<td class='small'>{why}</td></tr>")
     p.append("</table>")
 
-    p.append("<h2>二、各步骤样本变化</h2>")
-    p.append("<table><tr><th>步骤</th><th>剩余样本</th><th>本步剔除</th></tr>")
-    chain = [
-        ("原始", stats["n_before"]),
-        ("异常电价过滤后", stats["n_after_price_filter"]),
-        ("电价缺失剔除后", stats["n_after_price_dropna"]),
-        ("去重后", stats["n_after_dedup"]),
-        ("仅 2025 数据", stats["n_after_2025"]),
-    ]
-    prev = None
-    for name, n in chain:
-        drop = (prev - n) if prev is not None else 0
-        p.append(f"<tr><td>{name}</td><td class='num'>{n:,}</td>"
-                 f"<td class='num'>{drop:,}</td></tr>")
-        prev = n
+    p.append("<h2>二、各步骤样本变化（明细）</h2>")
+    p.append("<p class='small'>"
+             "<strong>本步前</strong>: 进入本步时的样本数。"
+             "<strong>本步剔除</strong>: 本规则真实命中的行数。"
+             "<strong>占本步前 %</strong>: 本步剔除占本步前样本的比例。"
+             "<strong>累计剔除</strong>: 从原始数据到本步累计剔除的样本数。"
+             "<strong>剔除原因细分</strong>: 本步内部按子原因拆解。"
+             "</p>")
+    p.append("<table><tr><th>步骤</th><th>本步前</th><th>本步剔除</th>"
+             "<th>占本步前 %</th><th>本步后</th><th>累计剔除</th>"
+             "<th>剔除原因细分</th></tr>")
+
+    n_orig = stats["n_before"]
+    cum_dropped = 0
+    for step in stats.get("steps", []):
+        name = step["name"]
+        before = step["before"]
+        after = step["after"]
+        dropped = step["dropped"]
+        # 无效列剔除步骤是"剔列不剔行"，不累加到样本累计
+        is_col_step = (name == "无效列剔除")
+        if not is_col_step:
+            cum_dropped += dropped
+        pct = (dropped / before * 100) if before > 0 else 0.0
+
+        # 子原因细分渲染
+        sub = step.get("sub", {})
+        sub_parts = []
+        if step.get("note"):
+            sub_parts.append(f"<em class='small'>{step['note']}</em>")
+        if sub:
+            for reason, n in sub.items():
+                # n 可能是 int 或 str (整日污染剔除步骤用 str 描述)
+                if isinstance(n, str):
+                    sub_parts.append(f"<code>{reason}</code>: {n}")
+                elif n > 0:
+                    sub_parts.append(f"<code>{reason}</code>: {n:,}")
+        sub_html = "<br>".join(sub_parts) if sub_parts else "—"
+
+        unit = "列" if is_col_step else "行"
+        p.append(f"<tr><td><strong>{name}</strong></td>"
+                 f"<td class='num'>{before:,} {unit}</td>"
+                 f"<td class='num'>{dropped:,}</td>"
+                 f"<td class='num'>{pct:.2f}%</td>"
+                 f"<td class='num'>{after:,} {unit}</td>"
+                 f"<td class='num'>{cum_dropped:,}</td>"
+                 f"<td class='small'>{sub_html}</td></tr>")
+    # 末行汇总
+    p.append(f"<tr class='winner'><td><strong>总计</strong></td>"
+             f"<td class='num'>{n_orig:,} 行</td>"
+             f"<td class='num'>{cum_dropped:,}</td>"
+             f"<td class='num'>{cum_dropped/max(n_orig,1)*100:.2f}%</td>"
+             f"<td class='num'>{stats['n_after']:,} 行</td>"
+             f"<td class='num'>{cum_dropped:,}</td>"
+             f"<td class='small'>清洗后 {stats['n_after']:,} 行 × {stats['col_after']} 列</td></tr>")
     p.append("</table>")
 
     if stats["dropped_cols"]:
