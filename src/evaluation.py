@@ -339,6 +339,121 @@ def plot_daily_split(df: pd.DataFrame, split_name: str,
 
 
 def generate_daily_plots(payload: Dict) -> Dict[str, List[Dict]]:
+    """三集分别逐日生图，返回每集的元数据 (供 HTML 展示)。
+
+    同时生成小时和 15min 两套图：
+    - outputs/daily/train/  (小时，24点)
+    - outputs/daily_15min/train/  (15min，96点)
+    """
+    out = {}
+
+    # 小时粒度图（保留原有逻辑）
+    for split_key, dir_key in [("train", "daily_train"),
+                                ("val",   "daily_val"),
+                                ("test",  "daily_test")]:
+        m = payload["metrics"][split_key]
+        df = pd.DataFrame({
+            "datetime": pd.to_datetime(payload[f"dt_{split_key}"]),
+            "真实":     np.array(payload[f"y_{split_key}"]),
+            "日前价":   np.array(payload[f"da_{split_key}"]),
+            "XGB预测":  np.array(m["y_pred"]),
+        })
+        out[split_key] = plot_daily_split(df, split_key, PATHS[dir_key])
+
+    # 15min 粒度图（新增）
+    if "data_15min_train" in payload:
+        print("\n[生成 15min 逐日对比图]")
+        for split_key in ["train", "val", "test"]:
+            data_15 = payload[f"data_15min_{split_key}"]
+            if data_15 and len(data_15.get('datetime', [])) > 0:
+                df_15 = pd.DataFrame({
+                    "datetime": pd.to_datetime(data_15['datetime']),
+                    "真实": data_15['y_true'],
+                    "日前价": data_15['da_price'],
+                    "XGB预测": data_15['pred'],
+                })
+                # 如果有实时节点电价，也加上
+                if data_15.get('node_price') and any(x is not None for x in data_15['node_price']):
+                    df_15['实时节点价'] = data_15['node_price']
+
+                # 输出到 outputs/daily_15min/{split}/
+                out_dir = os.path.join("outputs", f"daily_15min", split_key)
+                plot_daily_split_15min(df_15, split_key, out_dir)
+
+    return out
+
+
+def plot_daily_split_15min(df: pd.DataFrame, split_name: str, out_dir: str) -> None:
+    """
+    15min 粒度逐日对比图（96个点/天）
+
+    包含：真实价、日前价、XGB预测（小时展开）、实时节点价（如果有）
+    """
+    setup_cn_font()
+    os.makedirs(out_dir, exist_ok=True)
+
+    # 清空旧文件
+    for fn in os.listdir(out_dir):
+        if fn.endswith(".png"):
+            os.remove(os.path.join(out_dir, fn))
+
+    df = df.copy()
+    df["datetime"] = pd.to_datetime(df["datetime"])
+    df["date"] = df["datetime"].dt.date
+
+    # 按日生成
+    has_node_price = '实时节点价' in df.columns and df['实时节点价'].notna().any()
+
+    for d, grp in df.groupby("date"):
+        grp = grp.sort_values("datetime")
+        if len(grp) == 0:
+            continue
+
+        mae = np.mean(np.abs(grp["真实"] - grp["XGB预测"]))
+
+        fig, ax = plt.subplots(figsize=(14, 5))
+
+        # 绘制曲线
+        ax.plot(grp["datetime"], grp["真实"], label="实时统一价（真实）",
+                color="#4C72B0", lw=2, marker="o", ms=3, alpha=0.9)
+        ax.plot(grp["datetime"], grp["日前价"], label="日前价(B7')",
+                color="#888", lw=1.5, ls=":", marker="s", ms=2.5, alpha=0.7)
+        ax.plot(grp["datetime"], grp["XGB预测"], label="XGB 预测（小时展开）",
+                color="#C44E52", lw=1.8, marker="x", ms=4, alpha=0.9)
+
+        if has_node_price:
+            node_data = grp["实时节点价"].dropna()
+            if len(node_data) > 0:
+                ax.plot(grp["datetime"], grp["实时节点价"], label="实时节点价",
+                        color="#55A868", lw=1.2, ls="--", marker="^", ms=2.5, alpha=0.7)
+
+        # 误差填充
+        ax.fill_between(grp["datetime"], grp["真实"], grp["XGB预测"],
+                        color="#C44E52", alpha=0.1, label="XGB 误差区间")
+
+        ax.set_title(
+            f"[{split_name} / 15min] {d}  日内 96 点对比  MAE={mae:.2f}",
+            fontsize=12, fontweight='bold'
+        )
+        ax.set_xlabel("时间", fontsize=10)
+        ax.set_ylabel("电价 (元/MWh)", fontsize=10)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
+        ax.legend(loc="best", fontsize=9, framealpha=0.9)
+        ax.grid(alpha=0.3, ls=":")
+        fig.autofmt_xdate(rotation=0)
+
+        fname = f"{d}_15min_MAE{mae:06.2f}.png"
+        path = os.path.join(out_dir, fname)
+        try:
+            plt.savefig(path, dpi=100, bbox_inches="tight")
+        finally:
+            plt.close()
+
+    print(f"  {split_name}: {len(df['date'].unique())} 张 15min 图 → {out_dir}")
+
+
+def generate_daily_plots_original(payload: Dict) -> Dict[str, List[Dict]]:
     """三集分别逐日生图，返回每集的元数据 (供 HTML 展示)。"""
     out = {}
     for split_key, dir_key in [("train", "daily_train"),

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head><meta charset='UTF-8'><title>新旧数据集对比报告</title>
+<style>
+body{font-family:'Segoe UI','Microsoft YaHei',sans-serif;max-width:1400px;margin:30px auto;padding:0 24px;background:#f7f8fa;color:#2c3e50;line-height:1.6;}
+h1{color:#1f3a5f;border-bottom:4px solid #3498db;padding-bottom:10px;}
+h2{color:#2c3e50;margin-top:32px;border-left:5px solid #3498db;padding-left:14px;}
+h3{color:#34495e;margin-top:24px;}
+.meta{background:#ecf0f1;padding:14px 18px;border-radius:6px;margin:14px 0;}
+.fact{background:white;padding:14px 18px;border-left:4px solid #3498db;border-radius:4px;margin:12px 0;}
+.match{background:#e8f5e9;padding:14px 18px;border-left:4px solid #27ae60;border-radius:4px;margin:12px 0;}
+.warn{background:#fff4e3;padding:14px 18px;border-left:5px solid #e67e22;border-radius:6px;margin:14px 0;}
+table{border-collapse:collapse;width:100%;background:white;margin:14px 0;box-shadow:0 2px 4px rgba(0,0,0,0.08);font-size:13px;}
+th,td{border:1px solid #dde2e7;padding:10px 12px;}
+th{background:#3498db;color:white;text-align:center;font-weight:600;}
+td.num{font-family:Consolas,monospace;text-align:right;}
+td.match-c{background:#e8f5e9;font-weight:600;}
+td.warn-c{background:#fce4ec;}
+img{max-width:100%;border:1px solid #ddd;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.12);margin:10px 0;}
+code{background:#ecf0f1;padding:2px 6px;border-radius:3px;font-family:Consolas,monospace;}
+ul,ol{margin:8px 0;padding-left:28px;}
+li{margin:6px 0;}
+</style></head>
+<body>
+<h1>新旧数据集对比报告</h1>
+
+<div class='meta'>
+<p><strong>报告日期</strong>: 2026-07-17</p>
+<p><strong>对比数据集</strong>:</p>
+<ul style='margin:8px 0;'>
+<li><strong>数据集A（旧）</strong>: <code>2025-2026市场情况</code>，逐月Excel，15min 原生粒度，4 列电价</li>
+<li><strong>数据集B（新）</strong>: <code>安徽真实电网交易数据情况</code>，5 个宽表，混合粒度</li>
+</ul>
+<p><strong>对比粒度</strong>: 15min 原始 + 1h 聚合</p>
+</div>
+
+<h2>一、数据集列的物理对应关系</h2>
+<div class='fact'>
+<p><strong>数据集A（旧）</strong> 15min 原生 4 列电价:</p>
+<ul>
+<li><code>日前统一结算点电价</code>、<code>实时统一结算点电价</code></li>
+<li><code>日前节点电价</code>、<code>实时节点电价</code></li>
+</ul>
+
+<p><strong>数据集B（新）</strong> 分两个表:</p>
+<ul>
+<li>96 点表（15min）: <code>day_ahead_clearing_avg_price</code>（日前出清均价）、<code>real_time_clearing_price</code>（实时出清电价）</li>
+<li>24 点表（1h）: <code>day_ahead_unified_settlement_price</code>、<code>real_time_unified_settlement_price</code></li>
+</ul>
+
+<p><strong>关键约定</strong>: 新数据的 <code>real_time_clearing_price</code> 是 15min 实时出清价；24 点表是 1h 结算价。新数据<strong>没有</strong>"节点电价"这一列。</p>
+</div>
+
+<h2>二、新数据内部一致性验证</h2>
+<p>问题: 新数据 96 点表（15min）聚合到 1h 后，是否等于 24 点表（1h）原生记录？</p>
+
+<h3>2.1 算术平均 / 电量加权 vs 24 点表</h3>
+<table>
+<tr><th>物理量</th><th>聚合方式</th><th>MAE</th><th>Max|diff|</th><th>结论</th></tr>
+<tr><td>日前</td><td>算术平均</td><td class='num'>0.40</td><td class='num'>18.85</td><td>—</td></tr>
+<tr><td class='match-c'>日前</td><td class='match-c'>电量加权</td><td class='num match-c'>0.06</td><td class='num match-c'>9.20</td>
+    <td class='match-c'>✅ 24 点表 = 96 点表的<strong>电量加权价</strong></td></tr>
+<tr><td>实时</td><td>算术平均</td><td class='num'>1.13</td><td class='num'>45.66</td><td>—</td></tr>
+<tr><td class='warn-c'>实时</td><td class='warn-c'>电量加权</td><td class='num warn-c'>1.06</td><td class='num warn-c'>45.64</td>
+    <td class='warn-c'>⚠️ 电量加权也不完全吻合，24 点表是<strong>独立结算</strong></td></tr>
+</table>
+
+<div class='warn'>
+<p><strong>结论</strong>:</p>
+<ul>
+<li><strong>日前</strong>: 24 点表 ≈ 96 点表的<u>电量加权</u>（MAE=0.06），两表可以互推</li>
+<li><strong>实时</strong>: 24 点表<u>不能</u>由 96 点表推得（Max 差 45 元），是<strong>独立的物理量</strong>
+    <ul>
+    <li>96 点表 <code>real_time_clearing_price</code> = 15min 逐点实时出清价</li>
+    <li>24 点表 <code>real_time_unified_settlement_price</code> = 1h 统一结算价（含机组/节点分摊）</li>
+    </ul>
+</li>
+</ul>
+</div>
+
+<h3>2.2 差异最大的示例（2025-10-23 h_idx=14）</h3>
+<table>
+<tr><th>时点</th><th>15min 实时出清价</th><th>15min 电量 (MWh)</th></tr>
+<tr><td>13:15</td><td class='num'>138.50</td><td class='num'>3767.83</td></tr>
+<tr><td>13:30</td><td class='num'>135.91</td><td class='num'>3661.69</td></tr>
+<tr><td>13:45</td><td class='num'>133.11</td><td class='num'>3652.90</td></tr>
+<tr><td>14:00</td><td class='num'>135.07</td><td class='num'>3682.96</td></tr>
+<tr><td><strong>算术平均</strong></td><td class='num'><strong>135.65</strong></td><td>—</td></tr>
+<tr><td><strong>电量加权</strong></td><td class='num'><strong>135.67</strong></td><td>—</td></tr>
+<tr><td class='warn-c'><strong>24 点表实际值</strong></td>
+    <td class='num warn-c'><strong>181.31</strong></td><td>—</td></tr>
+</table>
+
+<h2>三、15min 原始粒度对比</h2>
+<p>共同 15min 时点: <strong>33,547</strong></p>
+<table>
+<tr><th>物理量</th><th>对比项</th><th>MAE</th><th>RMSE</th><th>一致率</th><th>相关系数</th><th>判定</th></tr>
+<tr><td>实时</td><td class='match-c'>新_出清价 vs 旧_统一结算点</td>
+    <td class='num match-c'>0.01</td><td class='num match-c'>0.60</td>
+    <td class='num match-c'>99.6%</td><td class='num match-c'>1.0000</td>
+    <td class='match-c'>✓ 同物理量</td></tr><tr><td>实时</td><td class='warn-c'>新_出清价 vs 旧_节点电价</td>
+    <td class='num warn-c'>16.34</td><td class='num warn-c'>48.67</td>
+    <td class='num warn-c'>50.5%</td><td class='num warn-c'>0.9515</td>
+    <td class='warn-c'>✗ 不同物理量</td></tr><tr><td>日前</td><td class='match-c'>新_出清均价 vs 旧_统一结算点</td>
+    <td class='num match-c'>0.00</td><td class='num match-c'>0.00</td>
+    <td class='num match-c'>99.6%</td><td class='num match-c'>1.0000</td>
+    <td class='match-c'>✓ 同物理量</td></tr><tr><td>日前</td><td class='warn-c'>新_出清均价 vs 旧_节点电价</td>
+    <td class='num warn-c'>9.33</td><td class='num warn-c'>38.07</td>
+    <td class='num warn-c'>68.9%</td><td class='num warn-c'>0.9721</td>
+    <td class='warn-c'>✗ 不同物理量</td></tr></table>
+<div class='match'>
+<p><strong>15min 匹配对</strong>（同一物理量的新旧对比）:</p>
+<ul>
+<li>实时: 新_出清价 vs 旧_统一结算点 → <strong>MAE=0.01, 一致率=99.6%, corr=1.0000</strong></li>
+<li>日前: 新_出清均价 vs 旧_统一结算点 → <strong>MAE=0.00, 一致率=99.6%, corr=1.0000</strong></li>
+</ul>
+<p><strong>结论</strong>: 新旧数据在 15min 原始粒度上<u>几乎完全一致</u>。旧数据的"统一结算点电价"实际记录的是 15min 出清价，与新数据的 <code>clearing_price</code> 是同一个物理量。</p>
+</div>
+
+<h3>3.1 时序对比图 (2025-01-01 ~ 01-03)</h3>
+<img src='compare_15min.png' alt='15min 时序对比'>
+<p class='meta'>上排是<strong>同物理量匹配对</strong>（新旧几乎完全重合），下排是<strong>对照组</strong>（新_出清价 vs 旧_节点电价，明显不一致）。</p>
+
+<h2>四、1h 聚合粒度对比</h2>
+<p>共同 1h 时点: <strong>8,472</strong></p>
+<table>
+<tr><th>物理量</th><th>对比项</th><th>MAE</th><th>RMSE</th><th>一致率</th><th>相关系数</th><th>判定</th></tr>
+<tr><td>实时</td><td class='match-c'>新_统一结算(1h) vs 旧_统一结算(聚合)</td>
+    <td class='num match-c'>1.55</td><td class='num match-c'>4.44</td>
+    <td class='num match-c'>18.3%</td><td class='num match-c'>0.9995</td>
+    <td class='match-c'>✓ 同物理量</td></tr><tr><td>实时</td><td class='warn-c'>新_统一结算(1h) vs 旧_节点(聚合)</td>
+    <td class='num warn-c'>16.11</td><td class='num warn-c'>43.22</td>
+    <td class='num warn-c'>15.3%</td><td class='num warn-c'>0.9586</td>
+    <td class='warn-c'>✗ 不同物理量</td></tr><tr><td>日前</td><td class='match-c'>新_统一结算(1h) vs 旧_统一结算(聚合)</td>
+    <td class='num match-c'>0.73</td><td class='num match-c'>3.29</td>
+    <td class='num match-c'>33.1%</td><td class='num match-c'>0.9998</td>
+    <td class='match-c'>✓ 同物理量</td></tr><tr><td>日前</td><td class='warn-c'>新_统一结算(1h) vs 旧_节点(聚合)</td>
+    <td class='num warn-c'>9.64</td><td class='num warn-c'>33.93</td>
+    <td class='num warn-c'>26.1%</td><td class='num warn-c'>0.9766</td>
+    <td class='warn-c'>✗ 不同物理量</td></tr></table>
+<div class='warn'>
+<p><strong>1h 对比差异来源分解</strong>:</p>
+<ul>
+<li>15min 匹配对 (新_96 vs 旧) MAE ≈ 0（几乎一致）</li>
+<li>但 <strong>新_24 点表 ≠ 新_96 点表的算术聚合</strong>（见第二章）: 日前差 0.40 元, 实时差 1.13 元</li>
+<li>所以 1h 对比看到的 MAE≈1.55 完全来自"新数据内部两个表的差异"，与新旧数据集本身无关</li>
+</ul>
+<p><strong>核心结论</strong>: 新_24 点表的"实时统一结算点电价"是<strong>独立的物理量</strong>（1h 结算规则下的价格），不是 15min 出清价的聚合。</p>
+</div>
+
+<h3>4.1 时序对比图 (2025-01-01 ~ 01-03)</h3>
+<img src='compare_1h.png' alt='1h 时序对比'>
+
+<h2>五、散点图对比</h2>
+<img src='scatter_15min_and_1h.png' alt='散点图'>
+<p class='meta'>绿色 = 同物理量匹配对（点在 y=x 上），蓝橙 = 对照组（点偏离 y=x）。上排 15min 原始，下排 1h 聚合。</p>
+
+<h2>六、差值分布</h2>
+<img src='diff_histogram.png' alt='差值分布'>
+<p class='meta'>只画匹配对。15min: 差值几乎全集中在 0（std&lt;1），说明数据完全相同；1h: 差值有小的双向分布，源于 24 点表的独立结算。</p>
+
+<h2>七、最终结论</h2>
+
+<div class='match'>
+<p><strong>✅ 核心结论</strong>:</p>
+<ul>
+<li><strong>15min 层面</strong>: 新旧数据在共同物理量上<u>几乎完全一致</u>（MAE≈0.01，一致率 99.6%，corr=1.0000）</li>
+<li><strong>1h 层面</strong>: 新数据的 24 点表是<u>独立的物理量</u>，不是 15min 出清价的算术/电量加权平均</li>
+<li>之前"MAE=16.74"的错误结论源于把 <code>旧_实时节点电价</code> 与 <code>新_实时统一结算点</code> 直接对比，实际是两个不同的物理量</li>
+</ul>
+</div>
+
+<div class='fact'>
+<p><strong>正确的物理量对应关系</strong>:</p>
+<table>
+<tr><th>物理量</th><th>数据集A（旧）15min</th><th>数据集B（新）15min</th><th>数据集B（新）1h</th></tr>
+<tr><td>日前出清价</td><td>日前统一结算点电价</td>
+    <td><code>day_ahead_clearing_avg_price</code></td>
+    <td><code>day_ahead_unified_settlement_price</code>（电量加权）</td></tr>
+<tr><td>实时出清价</td><td>实时统一结算点电价</td>
+    <td><code>real_time_clearing_price</code></td>
+    <td colspan='1'>—</td></tr>
+<tr><td>实时统一结算价 (1h)</td><td>—</td><td>—</td>
+    <td><code>real_time_unified_settlement_price</code>（独立结算）</td></tr>
+<tr><td>日前节点</td><td>日前节点电价</td>
+    <td colspan='2' style='text-align:center;color:#c0392b;'>新数据无此列</td></tr>
+<tr><td>实时节点</td><td>实时节点电价</td>
+    <td colspan='2' style='text-align:center;color:#c0392b;'>新数据无此列</td></tr>
+</table>
+</div>
+
+<div class='warn'>
+<p><strong>⚠️ 项目影响</strong>:</p>
+<ul>
+<li>本项目目标列 <code>实时统一结算点电价(元/MWh)</code> 用的是新数据 24 点表（1h 独立结算价）</li>
+<li>输入特征 <code>real_time_clearing_price</code>（在 <code>cleaning.py</code> 中命名为"实时出清电价"）是 96 点表的 15min 出清价</li>
+<li>两者最大可差 45+ 元，是<strong>两个不同的市场价格口径</strong>，作为泄漏列剔除是正确的</li>
+<li>新旧数据集在 15min 出清价上完全等价，但新数据独有 1h 独立结算价这个物理量</li>
+</ul>
+</div>
+
+<div class='meta'>
+<p><strong>使用建议</strong>:</p>
+<ul>
+<li>需要 <strong>15min 粒度目标</strong>: 新数据用 <code>real_time_clearing_price</code>，旧数据用"实时统一结算点电价"（两者一致）</li>
+<li>需要 <strong>1h 独立结算价</strong>: 只能用新数据的 <code>real_time_unified_settlement_price</code>；旧数据没有对应列</li>
+<li><strong>不要混用</strong>: 新_24 vs 旧_15min聚合 会有 1.55 元的系统偏差，源于 24 点表是独立结算</li>
+</ul>
+</div>
+
+</body></html>

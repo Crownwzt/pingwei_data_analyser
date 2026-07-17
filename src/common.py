@@ -15,7 +15,7 @@
 业务约定：
   - 目标列        TARGET_COL    实时统一结算点电价(元/MWh)
   - 日前价基准    DA_COL        日前统一结算点电价(元/MWh) (D-1 已知)
-  - 数据泄漏列    LEAKAGE_COLS  实时节点电价（与目标同时刻产生）
+  - 数据泄漏列    LEAKAGE_COLS  实时出清电价（15min 出清价, 与目标同时刻产生）
   - 时序粒度      15min → 聚合为小时 (24 点/天)
   - 默认切分      train=2025-01~10 / val=2025-11 / test=2025-12
 """
@@ -42,8 +42,8 @@ import matplotlib.pyplot as plt
 TARGET_COL = "实时统一结算点电价(元/MWh)"
 DA_COL = "日前统一结算点电价(元/MWh)"
 
-# 与目标同时刻产生的强同步信号（实时节点价、实时统一结算价是同一次出清的两个口径）
-LEAKAGE_COLS = {"实时节点电价(元/MWh)"}
+# 与目标同时刻产生的强同步信号（15min 实时出清价与 1h 实时统一结算价源自同一次出清）
+LEAKAGE_COLS = {"实时出清电价(元/MWh)"}
 
 # 默认切分（dataset_partitioning 选定的方案 B）
 DEFAULT_TRAIN_MONTHS = list(range(1, 11))   # 2025-01 ~ 10
@@ -53,7 +53,8 @@ DEFAULT_DATA_YEAR = 2025
 
 # 工程路径
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-DATA_DIR_DEFAULT = os.path.join(ROOT, "2025-2026市场情况")
+# 使用安徽真实电网交易数据（5 表结构：负荷预测 / 负荷实际 / 日前实时出清 / 统一结算点电价 / 日前平均申报电价）
+DATA_DIR_DEFAULT = os.path.join(ROOT, "安徽真实电网交易数据情况")
 OUT_DIR = os.path.join(ROOT, "outputs")
 PLOTS_DIR = os.path.join(OUT_DIR, "plots")
 DAILY_DIR = os.path.join(OUT_DIR, "daily")

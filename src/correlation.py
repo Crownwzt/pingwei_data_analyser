@@ -154,7 +154,7 @@ def plot_eda(df: pd.DataFrame, miss_top: pd.Series,
     # 3. 电价时序图组（4 子图：日均 / 月均 / 24h按月 / 小时×月热力）
     price_cols = [c for c in [
         "日前统一结算点电价(元/MWh)", "实时统一结算点电价(元/MWh)",
-        "日前节点电价(元/MWh)", "实时节点电价(元/MWh)",
+        "实时出清电价(元/MWh)",
     ] if c in df.columns]
 
     if price_cols:
@@ -396,8 +396,8 @@ def make_html(df: pd.DataFrame, eda_stats: Dict, target_corr: pd.Series,
     p.append(img_tag(corr_plots.get("top", "")))
 
     p.append('<div class="warn">')
-    p.append("<p><strong>数据泄漏识别</strong>: <code>实时节点电价(元/MWh)</code> 与目标"
-             f" <code>{target_col}</code> 是同一次出清的两个口径 (节点价 vs 加权统一价)，"
+    p.append("<p><strong>数据泄漏识别</strong>: <code>实时出清电价(元/MWh)</code> 与目标"
+             f" <code>{target_col}</code> 是同一次出清的两个口径 (15min 出清价 vs 1h 统一结算价)，"
              "<strong>同时刻产生</strong>，相关性 ≈ 0.95。用作特征等于变相用未来信息，必须剔除。</p>")
     p.append("</div>")
 

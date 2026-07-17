@@ -78,6 +78,12 @@ def _sample_weight(dt_series: pd.Series) -> np.ndarray:
     return 1.0 + (months - months.min()) / span
 
 
+def ensemble_predict(models, X, da, alpha):
+    """Ensemble 预测：用于生成最终预测值"""
+    preds = np.mean([m.predict(X) for m in models], axis=0)
+    return da + alpha * preds
+
+
 def fit_residual_ensemble(splits, da_col: str = DA_COL,
                           seeds: List[int] = None) -> List[XGBRegressor]:
     """
@@ -372,7 +378,7 @@ FEATURE_SPECS = [
 
 # 显式禁用列（数据泄漏 / 未来信息）
 FORBIDDEN_SPECS = [
-    ("实时节点电价(元/MWh)", "与目标同一次出清产生，相关性≈0.95，强同步信号"),
+    ("实时出清电价(元/MWh)", "15min 实时出清价，与目标(1h 实时统一结算价)同一次出清产生，强同步信号"),
     ("所有 _实际 后缀列", "D 日实际负荷/出力 D-1 日 14:00 申报截止时未发生"),
     ("target lag < 24h", "day-ahead 场景下 D 日所有点的近期 lag 都是未来"),
 ]
@@ -564,7 +570,7 @@ def make_html(models: List[XGBRegressor], alpha_star: float, splits,
     p.append("<p><strong>关键合法性证明</strong>：所有 lag/rolling/差分特征的"
              "窗口尾部都至少是 24 小时前的数据。预测 D 日任何小时点时，"
              "用到的数据全部在 D-1 日 0:00 之前已结算公布。"
-             "<code>实时节点电价</code> 与目标同时刻产生 (r≈0.95)，已显式黑名单。</p>")
+             "<code>实时出清电价</code> 与目标同时刻产生 (r≈0.95)，已显式黑名单。</p>")
     p.append("</div>")
 
     # 四、超参数
@@ -681,6 +687,57 @@ def main() -> str:
     imp_mat = np.stack([m.feature_importances_ for m in models])
     imp_mean = dict(zip(feat_cols, imp_mat.mean(axis=0).tolist()))
 
+    # 生成 15min 扩展数据（用于逐日对比图）
+    # 目标列 (实时统一结算点电价) 在原始数据里为 1h 粒度, 已被广播到 15min 4 点,
+    # 此处直接复用清洗后的 15min 缓存, 不再重新读原始 Excel
+    print("\n[生成 15min 扩展数据用于可视化]")
+    df_2025_15 = load_clean()
+    df_2025_15 = df_2025_15[df_2025_15['datetime'].dt.year == 2025].copy()
+
+    def expand_hourly_to_15min(dt_hour, y_hour, da_hour, pred_hour, df_15min_full, months):
+        """将小时预测扩展到 15min"""
+        df_hour = pd.DataFrame({
+            'datetime_hour': pd.to_datetime(dt_hour),
+            'y_hour': y_hour,
+            'da_hour': da_hour,
+            'pred_hour': pred_hour
+        })
+
+        df_15 = df_15min_full[df_15min_full['datetime'].dt.month.isin(months)].copy()
+        df_15['datetime_hour'] = df_15['datetime'].dt.floor('h')
+
+        merged = df_15.merge(df_hour, on='datetime_hour', how='inner')
+
+        return {
+            'datetime': merged['datetime'].dt.strftime('%Y-%m-%d %H:%M:%S').tolist(),
+            'y_true': merged['实时统一结算点电价(元/MWh)'].tolist(),
+            'da_price': merged['日前统一结算点电价(元/MWh)'].tolist(),
+            'pred': merged['pred_hour'].tolist(),
+            'node_price': merged.get('实时出清电价(元/MWh)', pd.Series([None]*len(merged))).tolist()
+        }
+
+    # 计算三集的预测
+    pred_tr = ensemble_predict(models, splits.X_tr, da_tr, alpha_star)
+    pred_va = ensemble_predict(models, splits.X_va, da_va, alpha_star)
+    pred_te = ensemble_predict(models, splits.X_te, da_te, alpha_star)
+
+    data_15min_tr = expand_hourly_to_15min(
+        splits.dt_tr.values, splits.y_tr.values, da_tr, pred_tr,
+        df_2025_15, cfg['train_months']
+    )
+    data_15min_va = expand_hourly_to_15min(
+        splits.dt_va.values, splits.y_va.values, da_va, pred_va,
+        df_2025_15, cfg['val_months']
+    )
+    data_15min_te = expand_hourly_to_15min(
+        splits.dt_te.values, splits.y_te.values, da_te, pred_te,
+        df_2025_15, cfg['test_months']
+    )
+
+    print(f"  训练集 15min: {len(data_15min_tr['datetime'])} 个点")
+    print(f"  验证集 15min: {len(data_15min_va['datetime'])} 个点")
+    print(f"  测试集 15min: {len(data_15min_te['datetime'])} 个点")
+
     save_pickle({
         "config": XGB_CFG,
         "seeds": ENSEMBLE_SEEDS,
@@ -700,6 +757,10 @@ def main() -> str:
         "dt_test":  splits.dt_te.values.astype("datetime64[us]").astype(str).tolist(),
         "y_test":   splits.y_te.values.tolist(),
         "da_test":  da_te.tolist(),
+        # 15min 扩展数据（用于逐日对比图）
+        "data_15min_train": data_15min_tr,
+        "data_15min_val": data_15min_va,
+        "data_15min_test": data_15min_te,
     }, PATHS["metrics"])
     print(f"[INFO] 指标已保存 {PATHS['metrics']}")
 

@@ -35,103 +35,134 @@ from src.common import (
 
 
 # ---------------------------------------------------------------------------
-# 数据加载：扫描目录、读取并合并所有月份的 Excel
+# 数据加载：读取安徽真实电网交易数据的 5 个宽表并对齐到 15min
 # ---------------------------------------------------------------------------
-def _list_excels(data_dir: str) -> Tuple[List[str], List[str]]:
-    """扫描目录，返回 (价格文件列表, 供需文件列表)，过滤 Excel 临时文件。"""
-    if not os.path.isdir(data_dir):
-        raise FileNotFoundError(f"数据目录不存在: {data_dir}")
-    all_files = sorted(glob.glob(os.path.join(data_dir, "*.xlsx")))
-    all_files = [f for f in all_files
-                 if not os.path.basename(f).startswith("~$")
-                 and not os.path.basename(f).startswith(".~")]
-    price_files = [f for f in all_files if "价格趋势" in os.path.basename(f)]
-    supply_files = [f for f in all_files if "供需情况" in os.path.basename(f)]
-    return price_files, supply_files
+# 安徽新数据集：
+#   ├── 市场交易信息/日前实时出清_96点宽表表头.xlsx        (15min, 4 价量列 + 日前/实时)
+#   ├── 市场交易信息/统一结算点电价_24点宽表表头.xlsx      (1h  , 日前/实时统一结算点电价)
+#   ├── 市场交易信息/日前平均申报电价_1day宽表表头.xlsx    (day , 日均申报电价)
+#   ├── 负荷预测/负荷预测_96点宽表表头.xlsx                (15min, 日前预测 8 列)
+#   └── 负荷实际/负荷实际_96点宽表表头.xlsx                (15min, 实际 6 列)
+#
+# 对齐策略：以"日前实时出清" 15min 宽表为基准 (52608 行)，其它文件按 datetime 或 date merge。
+# 为了兼容既有 XGB 特征工程与 HTML 报告的中文列名，读入后统一映射到项目历史列名。
+
+# 英->中列名映射 (基于对照表 + 项目历史约定)
+_EN2CN_MAP = {
+    # 供给预测 (day-ahead) → 加 "_日前" 后缀 (与 select_feature_cols 里的 day-ahead 合法性一致)
+    "system_load_forecast_mw":                    "省调负荷(MW)_日前",
+    "power_supply_demand_balance_forecast_mw":    "供需平衡预测(MW)_日前",
+    "external_exchange_plan_mw":                  "外来外送计划(MW)_日前",
+    "generation_total_forecast_mw":               "发电总出力预测(MW)_日前",
+    "non_market_unit_output_forecast_mw":         "非市场化机组出力(MW)_日前",
+    "renewable_total_output_forecast_mw":         "新能源负荷(MW)_日前",
+    "wind_output_forecast_mw":                    "风电(MW)_日前",
+    "solar_output_forecast_mw":                   "光伏(MW)_日前",
+    "hydro_pumped_storage_output_forecast_mw":    "水电抽蓄(MW)_日前",
+    # 供给实际 (真实运行) → 加 "_实际" 后缀 (select_feature_cols 里禁用)
+    "actual_generation_total_mw":                 "发电总出力(MW)_实际",
+    "non_market_unit_output_actual_mw":           "非市场化机组出力(MW)_实际",
+    "renewable_total_output_actual_mw":           "新能源负荷(MW)_实际",
+    "wind_output_actual_mw":                      "风电(MW)_实际",
+    "solar_output_actual_mw":                     "光伏(MW)_实际",
+    "hydro_pumped_storage_output_actual_mw":      "水电抽蓄(MW)_实际",
+    # 市场交易
+    "day_ahead_cleared_energy_mwh":               "日前出清电量(MWh)",
+    "real_time_cleared_energy_mwh":               "实时出清电量(MWh)_实际",   # 与目标同期，标记为实际禁用
+    "day_ahead_clearing_avg_price_yuan_per_mwh":  "日前节点电价(元/MWh)",
+    "real_time_clearing_price_yuan_per_mwh":      "实时出清电价(元/MWh)",     # 15min 出清价, 与目标同时刻产生 → LEAKAGE_COLS
+    "day_ahead_unified_settlement_price_yuan_per_mwh":  "日前统一结算点电价(元/MWh)",
+    "real_time_unified_settlement_price_yuan_per_mwh":  "实时统一结算点电价(元/MWh)",  # TARGET_COL
+    "day_ahead_avg_bid_price_yuan_per_mwh":       "日前平均申报电价(元/MWh)_日前",
+}
 
 
-def _read_price_one(path: str) -> pd.DataFrame:
-    """读取单个价格文件的 96 点明细 sheet。"""
-    df = pd.read_excel(path, sheet_name="明细")
-    df["来源文件"] = os.path.basename(path)
+def _read_excel_normalize(path: str) -> pd.DataFrame:
+    """读取 xlsx 并把英文列名翻译为项目中文列名。"""
+    df = pd.read_excel(path)
+    df = df.rename(columns=_EN2CN_MAP)
     return df
 
 
-def _read_supply_one(path: str) -> pd.DataFrame:
-    """读取单个供需文件，合并日前+实际 sheet（带列后缀）。"""
-    xls = pd.ExcelFile(path)
-    da = pd.read_excel(xls, sheet_name="日前") if "日前" in xls.sheet_names else pd.DataFrame()
-    rt = pd.read_excel(xls, sheet_name="实际") if "实际" in xls.sheet_names else pd.DataFrame()
-    if not da.empty:
-        da = da.add_suffix("_日前").rename(
-            columns={"日期_日前": "日期", "时间_日前": "时间"})
-    if not rt.empty:
-        rt = rt.add_suffix("_实际").rename(
-            columns={"日期_实际": "日期", "时间_实际": "时间"})
-    if da.empty and rt.empty:
-        return pd.DataFrame()
-    if da.empty:
-        merged = rt
-    elif rt.empty:
-        merged = da
-    else:
-        merged = pd.merge(da, rt, on=["日期", "时间"], how="outer")
-    merged["来源文件_供需"] = os.path.basename(path)
+def _parse_datetime_15min(df: pd.DataFrame) -> pd.DataFrame:
+    """15min 宽表：解析 date + time_point 到 datetime，并派生 date_key + hour_index。
+
+    电力交易 "区间末点" 命名约定：
+      - time_point='00:15' (point_index=1) → [00:00, 00:15) 时段末，归属 D 日第 1 小时
+      - time_point='01:00' (point_index=4) → [00:45, 01:00) 时段末，归属 D 日第 1 小时
+      - time_point='01:15' (point_index=5) → 归属 D 日第 2 小时
+      - time_point='24:00' (point_index=96) → [23:45, 24:00) 时段末，归属 D 日第 24 小时
+
+    hour_index = ceil(point_index / 4) = ((p-1)//4)+1，用于与 24 点表 (date, hour_index) 精确对齐。
+    datetime 只作为时间轴显示用：'24:00' 归到当日 23:59 保留独立性。
+    """
+    df = df.copy()
+    date_raw = pd.to_datetime(df["date"])
+    df["date_key"] = date_raw.dt.floor("D")
+    if "point_index" in df.columns:
+        df["hour_index"] = ((df["point_index"].astype(int) - 1) // 4) + 1
+
+    time_str = df["time_point"].astype(str)
+    mask_24 = time_str == "24:00"
+    date_str = date_raw.dt.strftime("%Y-%m-%d")
+    date_str.loc[mask_24] = (date_raw.loc[mask_24] + pd.Timedelta(days=1)).dt.strftime("%Y-%m-%d")
+    time_str = time_str.mask(mask_24, "00:00")
+
+    df["datetime"] = pd.to_datetime(date_str + " " + time_str, errors="coerce")
+    df.loc[mask_24, "datetime"] = df.loc[mask_24, "datetime"] - pd.Timedelta(minutes=1)
+
+    df = df.dropna(subset=["datetime"]).drop(columns=["date", "time_point"], errors="ignore")
+    return df
+
+
+def _parse_datetime_1h(df: pd.DataFrame) -> pd.DataFrame:
+    """24 点宽表：保留 date_key + hour_index 作为精确对齐键，同时派生 datetime 便于显示。
+
+    hour_index=k 代表 D 日 [k-1:00, k:00) 区间末，即 hour='k:00' (k=1..23) 或 '24:00' (k=24)。
+    """
+    df = df.copy()
+    date_raw = pd.to_datetime(df["date"])
+    df["date_key"] = date_raw.dt.floor("D")
+    df["hour_index"] = df["hour_index"].astype(int)
+
+    time_str = df["hour"].astype(str)
+    mask_24 = time_str == "24:00"
+    date_str = date_raw.dt.strftime("%Y-%m-%d")
+    date_str.loc[mask_24] = (date_raw.loc[mask_24] + pd.Timedelta(days=1)).dt.strftime("%Y-%m-%d")
+    time_str = time_str.mask(mask_24, "00:00")
+
+    df["datetime"] = pd.to_datetime(date_str + " " + time_str, errors="coerce")
+    df.loc[mask_24, "datetime"] = df.loc[mask_24, "datetime"] - pd.Timedelta(minutes=1)
+
+    df = df.dropna(subset=["datetime"]).drop(columns=["date", "hour"], errors="ignore")
+    return df
+
+
+def _broadcast_hourly_to_15min_grid(df_h: pd.DataFrame, grid: pd.DataFrame) -> pd.DataFrame:
+    """按 (date_key, hour_index) 把 1h 表广播到 15min 网格。
+
+    这是唯一正确的对齐方式：15min 表的 hour_index 由 point_index 派生 (ceil(p/4))，
+    与 24 点表的 hour_index 语义完全一致。不使用 datetime.floor('h') 是因为区间末点
+    命名约定下 15min '01:00' 属 hour_index=1 而 1h 表 datetime='01:00' 也属 hour_index=1，
+    但 floor 会把它们拆到不同小时槽。
+    """
+    keys = ["date_key", "hour_index"]
+    val_cols = [c for c in df_h.columns if c not in keys + ["datetime"]]
+    right = df_h[keys + val_cols].drop_duplicates(subset=keys, keep="first")
+    merged = grid.merge(right, on=keys, how="left")
     return merged
 
 
-def _to_datetime(df: pd.DataFrame) -> pd.DataFrame:
-    """将 日期+时间 拼成 datetime，并衍生年/月/日/小时/星期/时段。
-
-    电力交易数据约定：
-      "日期=D+1, 时间=00:00:00" 实际含义是 "D 日 24:00:00" (当日最后一个时段结束点)。
-      直接按字面日期解析会让每月末尾多出 1 个"孤儿"点。
-      修复：把这类点回归到 (D+1 日) 00:00:00 - 15min = D 日 23:45:00
-    """
-    df = df.copy()
-    if pd.api.types.is_datetime64_any_dtype(df["日期"]):
-        date_str = df["日期"].dt.strftime("%Y-%m-%d")
-    else:
-        date_str = df["日期"].astype(str).str.slice(0, 10)
-    time_str = df["时间"].astype(str)
-    mask = time_str.str.match(r"^\d{1,2}:\d{2}(:\d{2})?$").fillna(False)
-    df = df.loc[mask].copy()
-    date_str = date_str.loc[mask]
-    time_str = time_str.loc[mask]
-    df["datetime"] = pd.to_datetime(date_str + " " + time_str, errors="coerce")
-    df = df.dropna(subset=["datetime"]).sort_values("datetime").reset_index(drop=True)
-
-    # ★ 修复电力交易时间约定
-    # 原始 Excel 里 "日期=D+1, 时间=00:00" 是 "D 日最后一个 15min 时段 [23:45, 24:00) 的结束点"
-    # 它与 "D 日 23:45" 是【不同时段】(实测价格不同, 例如 1/30 23:45=280 元 vs 1/31 00:00=250 元)
-    # 需保留其数据, 但归到当月最后一天 → 具体做法:
-    #   将 "D+1 00:00" 的 datetime 减 1 分钟 → "D 23:59"
-    #   这样它既保留独立性、又归属到 D 日, 逐日聚合时归入 D 日的第 24 个小时
-    if len(df) > 0:
-        is_midnight = ((df["datetime"].dt.hour == 0)
-                        & (df["datetime"].dt.minute == 0)
-                        & (df["datetime"].dt.second == 0))
-        # 只有那些"当日仅此一个点"的 00:00 才是孤儿 (真正的月末闭合时段)
-        day_counts = df["datetime"].dt.floor("D").value_counts()
-        is_orphan_day = df["datetime"].dt.floor("D").map(day_counts) == 1
-        orphan_mask = is_midnight & is_orphan_day
-        n_orphans = int(orphan_mask.sum())
-        if n_orphans > 0:
-            # 减 1 分钟归到前一日 23:59, 归属正确又不与前一日 23:45 冲突
-            df.loc[orphan_mask, "datetime"] = (
-                df.loc[orphan_mask, "datetime"] - pd.Timedelta(minutes=1)
-            )
-            df = df.sort_values("datetime").reset_index(drop=True)
-            print(f"[电力约定修复] 检测到 {n_orphans} 个月末孤儿点 (次日 00:00 = 前一日 24:00 结束点), "
-                  f"已归属到前一日 23:59 (保留独立数据)")
-
+def _augment_time_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """给已带 datetime 的宽表补上 年/月/日/小时/星期/是否周末/时段 派生列。"""
+    df = df.sort_values("datetime").reset_index(drop=True).copy()
     df["年"] = df["datetime"].dt.year
     df["月"] = df["datetime"].dt.month
     df["日"] = df["datetime"].dt.day
     df["小时"] = df["datetime"].dt.hour
     df["星期"] = df["datetime"].dt.weekday + 1
     df["是否周末"] = (df["星期"] >= 6).astype(int)
-    # 峰平谷划分（南方电力市场常见经验值）
+
     def _seg(h: int) -> str:
         if 8 <= h <= 11 or 18 <= h <= 21: return "峰"
         if 0 <= h <= 6: return "谷"
@@ -142,18 +173,63 @@ def _to_datetime(df: pd.DataFrame) -> pd.DataFrame:
 
 def load_data(data_dir: str) -> pd.DataFrame:
     """
-    加载并合并目录下全部价格 + 供需 Excel。
-    返回按 datetime 排序的宽表。
+    加载安徽真实电网交易数据（5 个宽表），对齐到 15min 粒度并返回宽表。
+
+    对齐策略：
+      1. 以 "日前实时出清_96点" (52608 行, 15min) 为主键
+      2. "负荷预测_96点" / "负荷实际_96点" 按 datetime 直接 merge
+      3. "统一结算点电价_24点" (1h)  → 广播到该小时的 4 个 15min 时段 (同小时同价)
+      4. "日前平均申报电价_1day" (day) → 广播到当日全部 96 点
     """
-    price_files, supply_files = _list_excels(data_dir)
-    if not price_files:
-        raise FileNotFoundError(f"目录中未发现 *价格趋势*.xlsx: {data_dir}")
-    price_df = pd.concat([_read_price_one(f) for f in price_files], ignore_index=True)
-    supply_df = (pd.concat([_read_supply_one(f) for f in supply_files], ignore_index=True)
-                 if supply_files else pd.DataFrame())
-    merged = price_df if supply_df.empty else pd.merge(
-        price_df, supply_df, on=["日期", "时间"], how="left")
-    return _to_datetime(merged)
+    if not os.path.isdir(data_dir):
+        raise FileNotFoundError(f"数据目录不存在: {data_dir}")
+
+    market_dir = os.path.join(data_dir, "市场交易信息")
+    load_actual_dir = os.path.join(data_dir, "负荷实际")
+    load_forecast_dir = os.path.join(data_dir, "负荷预测")
+
+    fp_clear = os.path.join(market_dir, "日前实时出清_96点宽表表头.xlsx")
+    fp_settle = os.path.join(market_dir, "统一结算点电价_24点宽表表头.xlsx")
+    fp_bid   = os.path.join(market_dir, "日前平均申报电价_1day宽表表头.xlsx")
+    fp_load_actual = os.path.join(load_actual_dir, "负荷实际_96点宽表表头.xlsx")
+    fp_load_forecast = os.path.join(load_forecast_dir, "负荷预测_96点宽表表头.xlsx")
+
+    for fp in (fp_clear, fp_settle, fp_bid, fp_load_actual, fp_load_forecast):
+        if not os.path.exists(fp):
+            raise FileNotFoundError(f"缺失原始文件: {fp}")
+
+    # ── 15min 基准表 ──
+    df_clear = _parse_datetime_15min(_read_excel_normalize(fp_clear))
+    df_clear = df_clear.drop(columns=["point_index"], errors="ignore")
+
+    df_load_fc = _parse_datetime_15min(_read_excel_normalize(fp_load_forecast))
+    df_load_fc = df_load_fc.drop(columns=["point_index", "hour_index", "date_key"], errors="ignore")
+
+    df_load_ac = _parse_datetime_15min(_read_excel_normalize(fp_load_actual))
+    df_load_ac = df_load_ac.drop(columns=["point_index", "hour_index", "date_key"], errors="ignore")
+
+    # ── 1h 结算点电价 → 按 (date_key, hour_index) 广播到 15min 网格 ──
+    df_settle = _parse_datetime_1h(_read_excel_normalize(fp_settle))
+    grid = df_clear[["datetime", "date_key", "hour_index"]].copy()
+    df_settle_15 = _broadcast_hourly_to_15min_grid(
+        df_settle.drop(columns=["datetime"], errors="ignore"),
+        grid,
+    ).drop(columns=["date_key", "hour_index"], errors="ignore")
+
+    # ── 1day 申报均价 → 按 date_key 广播到 15min ──
+    df_bid = _read_excel_normalize(fp_bid)
+    df_bid["date_key"] = pd.to_datetime(df_bid["date"]).dt.floor("D")
+    df_bid = df_bid.drop(columns=["date"], errors="ignore")
+    df_bid_15 = grid[["datetime", "date_key"]].merge(df_bid, on="date_key", how="left") \
+                                              .drop(columns=["date_key"])
+
+    # ── 合并 ──
+    merged = df_clear.drop(columns=["date_key", "hour_index"], errors="ignore").copy()
+    for right in (df_load_fc, df_load_ac, df_settle_15, df_bid_15):
+        merged = merged.merge(right, on="datetime", how="left")
+
+    merged["来源文件"] = "安徽真实电网交易数据"
+    return _augment_time_columns(merged)
 
 
 # ---------------------------------------------------------------------------
