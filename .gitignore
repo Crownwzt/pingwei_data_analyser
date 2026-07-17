@@ -4,6 +4,8 @@
 *.xls
 *.parquet
 *.h5
+*.txt
+*.DS_Store
 
 # # 程序生成报表
 # report.html
