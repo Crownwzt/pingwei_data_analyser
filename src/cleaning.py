@@ -69,7 +69,7 @@ _EN2CN_MAP = {
     # 市场交易
     "day_ahead_cleared_energy_mwh":               "日前出清电量(MWh)",
     "real_time_cleared_energy_mwh":               "实时出清电量(MWh)_实际",   # 与目标同期，标记为实际禁用
-    "day_ahead_clearing_avg_price_yuan_per_mwh":  "日前节点电价(元/MWh)",
+    "day_ahead_clearing_avg_price_yuan_per_mwh":  "日前出清均价(元/MWh)",
     "real_time_clearing_price_yuan_per_mwh":      "实时出清电价(元/MWh)",     # 15min 出清价, 与目标同时刻产生 → LEAKAGE_COLS
     "day_ahead_unified_settlement_price_yuan_per_mwh":  "日前统一结算点电价(元/MWh)",
     "real_time_unified_settlement_price_yuan_per_mwh":  "实时统一结算点电价(元/MWh)",  # TARGET_COL

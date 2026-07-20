@@ -372,9 +372,9 @@ def generate_daily_plots(payload: Dict) -> Dict[str, List[Dict]]:
                     "日前价": data_15['da_price'],
                     "XGB预测": data_15['pred'],
                 })
-                # 如果有实时节点电价，也加上
+                # 如果有其他辅助列（如旧数据的节点电价），也加上
                 if data_15.get('node_price') and any(x is not None for x in data_15['node_price']):
-                    df_15['实时节点价'] = data_15['node_price']
+                    df_15['其他辅助价'] = data_15['node_price']
 
                 # 输出到 outputs/daily_15min/{split}/
                 out_dir = os.path.join("outputs", f"daily_15min", split_key)
@@ -669,7 +669,7 @@ def make_html(payload: Dict, df_te: pd.DataFrame, baseline_df: pd.DataFrame,
 def make_index_html(m_te: Dict) -> str:
     p = [f"""
     <div class='meta'>
-    <p><strong>项目</strong>: 平湾电力市场 XGBoost 实时电价预测</p>
+    <p><strong>项目</strong>: 安徽省电力市场 XGBoost 实时电价预测</p>
     <p><strong>数据范围</strong>: 仅 2025 年 (2026 数据忽略)</p>
     <p><strong>切分</strong>: 训练 2025-01~10 / 验证 11 / 测试 12 (方案 B)</p>
     <p><strong>终版测试集</strong>: MAE = <strong>{m_te['xgb_mae']:.2f}</strong> 元/MWh
