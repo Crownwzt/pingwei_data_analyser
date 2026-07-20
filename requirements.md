@@ -1,6 +1,7 @@
-# 需求：平湾电力市场 XGBoost 实时电价预测工程
+# 需求：平圩电力市场 XGBoost 实时电价预测工程
 
 ## 输入
+
 - 数据目录路径：默认 `/data/ztwen2/project_dir/pingwei_data_analyser/2025-2026市场情况`
   - 包含每月一对 Excel：`*市场价格趋势.xlsx` + `*市场供需情况.xlsx`
   - 工程**仅消费 2025 全年数据**，2026 数据完全忽略
@@ -10,19 +11,20 @@
 
 5 个功能模块 + 1 个共享工具 + 1 个入口脚本，单一职责、无功能冗余：
 
-| 模块 | 文件 | 唯一 HTML |
-|------|------|-----------|
-| ① 数据清洗 | `src/cleaning.py` | `outputs/01_cleaning.html` |
-| ② 数据划分 | `src/split.py` | `outputs/02_split.html` |
-| ③ 数据相关性分析（含 EDA） | `src/correlation.py` | `outputs/03_correlation.html` |
-| ④ 模型训练 | `src/training.py` | `outputs/04_training.html` |
-| ⑤ 模型评测 | `src/evaluation.py` | `outputs/05_evaluation.html` |
-| 共享工具 | `src/common.py` | — |
-| 一键入口 | `run.sh` | 生成 `outputs/index.html` 总览 |
+| 模块                        | 文件                   | 唯一 HTML                        |
+| --------------------------- | ---------------------- | -------------------------------- |
+| ① 数据清洗                 | `src/cleaning.py`    | `outputs/01_cleaning.html`     |
+| ② 数据划分                 | `src/split.py`       | `outputs/02_split.html`        |
+| ③ 数据相关性分析（含 EDA） | `src/correlation.py` | `outputs/03_correlation.html`  |
+| ④ 模型训练                 | `src/training.py`    | `outputs/04_training.html`     |
+| ⑤ 模型评测                 | `src/evaluation.py`  | `outputs/05_evaluation.html`   |
+| 共享工具                    | `src/common.py`      | —                               |
+| 一键入口                    | `run.sh`             | 生成 `outputs/index.html` 总览 |
 
 ## 各模块功能清单
 
 ### ① 数据清洗 `cleaning.py`
+
 1. 加载原始 Excel：价格 96 点明细 + 供需日前/实际多 sheet
 2. 完整清洗策略：异常电价过滤、负荷类缺失前向填充、电价缺失剔除、datetime 去重、无效列剔除（缺失率 >80% 或方差=0）
 3. **仅保留 2025 年数据**
@@ -31,6 +33,7 @@
 6. HTML 报告：`outputs/01_cleaning.html`
 
 ### ② 数据划分 `split.py`
+
 1. 对 2025 数据做 4 个候选切分方案诊断对比：
    - A：训 1-8 / 验 9-10 / 测 11-12
    - **B（推荐）**：训 1-10 / 验 11 / 测 12
@@ -46,7 +49,9 @@
 6. HTML 报告：`outputs/02_split.html`
 
 ### ③ 数据相关性分析（含 EDA） `correlation.py`
+
 **职责**：整合原 EDA 与相关性分析的全部能力，单一模块单一 HTML 出口。
+
 1. 数据整体可视化：缺失率、各数值字段分布直方图
 2. 电价时序特征：全周期日均走势、月度均价柱状图、24 小时模式（按月分线）、小时×月热力图
 3. 全因子 Pearson 相关性矩阵
@@ -59,6 +64,7 @@
 10. HTML 报告：`outputs/03_correlation.html`
 
 ### ④ 模型训练 `training.py`
+
 1. 加载清洗缓存 + 切分配置
 2. day-ahead 合法特征工程（详见 `common.build_features`）：
    - 周期编码：小时/月/星期 sin/cos
@@ -76,6 +82,7 @@
 9. HTML 报告：`outputs/04_training.html`
 
 ### ⑤ 模型评测 `evaluation.py`
+
 1. 复用 `metrics.pkl` 的测试集预测序列（不重训）
 2. 测试集可视化：真实 vs 预测时序对比、散点图、误差分布直方图
 3. 分段诊断：按时段（峰/平/谷）、按电价四分位、按 24 小时

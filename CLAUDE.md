@@ -1,9 +1,11 @@
-# 项目：平湾电力市场 XGBoost 实时电价预测
+# 项目：平圩电力市场 XGBoost 实时电价预测
 
 ## 角色
+
 我是资深 Python 电力交易预测数据分析师，写工业级、可直接运行的数据分析与建模代码。
 
 ## 技术栈
+
 - 在用户 anaconda 环境中的 `pytorch-2.10` 环境下可运行
 - 不自行安装库，需要安装请让用户协助
 - Python 3.10+
@@ -12,6 +14,7 @@
 - 输出中文不乱码（自动探测 Noto Sans CJK / WenQuanYi / SimHei 等字体）
 
 ## 代码规范
+
 - 函数式、模块化、单一职责
 - 详细注释，特别是电力业务相关的衍生逻辑
 - 异常处理
@@ -60,13 +63,13 @@ pingwei_data_analyser/
 
 ## 模块职责与边界
 
-| 模块 | 职责 | 唯一 HTML |
-|------|------|----------|
-| ① `cleaning.py` | 加载原始 Excel + 清洗策略 + 2025 筛选 + 缓存 | `01_cleaning.html` |
-| ② `split.py` | 4 切分方案诊断 + 选定方案 B + 持久化 split.json | `02_split.html` |
-| ③ `correlation.py` | **EDA + 相关性分析**（合并原 analyzer 全部能力）：缺失率、字段分布、电价日均/月均/24h 模式/小时×月热力图、全因子 Pearson 矩阵、目标 \|r\| 排序、峰平谷分段、Top 主因子散点、业务语义解读 | `03_correlation.html` |
-| ④ `training.py` | 特征工程 + 残差预测 + 抗过拟合 XGB + 三集指标 | `04_training.html` |
-| ⑤ `evaluation.py` | 测试集时序/散点/误差/分段诊断 + Naive baseline 对比 + 总览 index.html | `05_evaluation.html` |
+| 模块                 | 职责                                                                                                                                                                                            | 唯一 HTML               |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| ①`cleaning.py`    | 加载原始 Excel + 清洗策略 + 2025 筛选 + 缓存                                                                                                                                                    | `01_cleaning.html`    |
+| ②`split.py`       | 4 切分方案诊断 + 选定方案 B + 持久化 split.json                                                                                                                                                 | `02_split.html`       |
+| ③`correlation.py` | **EDA + 相关性分析**（合并原 analyzer 全部能力）：缺失率、字段分布、电价日均/月均/24h 模式/小时×月热力图、全因子 Pearson 矩阵、目标 \|r\| 排序、峰平谷分段、Top 主因子散点、业务语义解读 | `03_correlation.html` |
+| ④`training.py`    | 特征工程 + 残差预测 + 抗过拟合 XGB + 三集指标                                                                                                                                                   | `04_training.html`    |
+| ⑤`evaluation.py`  | 测试集时序/散点/误差/分段诊断 + Naive baseline 对比 + 总览 index.html                                                                                                                           | `05_evaluation.html`  |
 
 ## 代码规范
 

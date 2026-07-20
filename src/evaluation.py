@@ -554,7 +554,7 @@ def make_html(payload: Dict, df_te: pd.DataFrame, baseline_df: pd.DataFrame,
 def make_index_html(m_te: Dict) -> str:
     p = [f"""
     <div class='meta'>
-    <p><strong>项目</strong>: 平湾电力市场 XGBoost 实时电价预测</p>
+    <p><strong>项目</strong>: 平圩电力市场 XGBoost 实时电价预测</p>
     <p><strong>数据范围</strong>: 仅 2025 年 (2026 数据忽略)</p>
     <p><strong>切分</strong>: 训练 2025-01~10 / 验证 11 / 测试 12 (方案 B)</p>
     <p><strong>终版测试集</strong>: MAE = <strong>{m_te['xgb_mae']:.2f}</strong> 元/MWh
