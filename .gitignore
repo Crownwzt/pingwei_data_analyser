@@ -6,6 +6,7 @@
 *.h5
 *.txt
 *.DS_Store
+!requirements.txt
 
 # # 程序生成报表
 # report.html
