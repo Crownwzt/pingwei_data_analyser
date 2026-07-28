@@ -1,0 +1,115 @@
+/data/ztwen2/project_dir/pingwei_data_analyser/experiments/gcn_weather_comparison_v2.py:96: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  df_all['year'] = df_all['datetime'].dt.year
+/data/ztwen2/project_dir/pingwei_data_analyser/experiments/gcn_weather_comparison_v2.py:97: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  df_all['month'] = df_all['datetime'].dt.month
+======================================================================
+GCN 天气对比实验 v2（含滞后差分特征工程）
+======================================================================
+
+[1/6] 加载主流程数据...
+  主流程: 59 特征
+  天气 F 组: 8，非天气: 51
+
+[2/6] 加载 GCN + 特征工程...
+  GCN 小时聚合: 8640 行
+  GCN 特征扩展: current(32) + lag1d(32) + diff1d(32) = 96 维
+
+[3/6] 合并到主流程特征表...
+  合并后: 8520 行
+  GCN current 缺失: 144 行
+
+[4/6] 数据切分...
+  训练/验证/测试: 7056/720/744
+
+======================================================================
+[5/6] 训练方案 A: 无天气 (51 特征)
+======================================================================
+  [ensemble 1/5] seed=42 best_iter=42
+  [ensemble 2/5] seed=7 best_iter=54
+  [ensemble 3/5] seed=137 best_iter=41
+  [ensemble 4/5] seed=2024 best_iter=43
+  [ensemble 5/5] seed=9527 best_iter=44
+  [α 学习] 验证集 α 扫描: α*=0.48, val_MAE_min=32.473 (α=1 时 MAE=34.298)
+  test: MAE=36.92, gain=+7.52%, α*=0.48
+
+======================================================================
+[5/6] 训练方案 B: 原始 F组 (lag+diff, 8维) (59 特征)
+======================================================================
+  [ensemble 1/5] seed=42 best_iter=40
+  [ensemble 2/5] seed=7 best_iter=43
+  [ensemble 3/5] seed=137 best_iter=41
+  [ensemble 4/5] seed=2024 best_iter=42
+  [ensemble 5/5] seed=9527 best_iter=46
+  [α 学习] 验证集 α 扫描: α*=0.44, val_MAE_min=32.362 (α=1 时 MAE=34.282)
+  test: MAE=36.79, gain=+7.84%, α*=0.44
+
+======================================================================
+[5/6] 训练方案 C1: GCN 当前 (32维) (83 特征)
+======================================================================
+  [ensemble 1/5] seed=42 best_iter=42
+  [ensemble 2/5] seed=7 best_iter=50
+  [ensemble 3/5] seed=137 best_iter=47
+  [ensemble 4/5] seed=2024 best_iter=48
+  [ensemble 5/5] seed=9527 best_iter=35
+  [α 学习] 验证集 α 扫描: α*=0.47, val_MAE_min=32.542 (α=1 时 MAE=34.633)
+  test: MAE=36.90, gain=+7.56%, α*=0.47
+
+======================================================================
+[5/6] 训练方案 C2: GCN lag1d (32维) (83 特征)
+======================================================================
+  [ensemble 1/5] seed=42 best_iter=43
+  [ensemble 2/5] seed=7 best_iter=53
+  [ensemble 3/5] seed=137 best_iter=47
+  [ensemble 4/5] seed=2024 best_iter=48
+  [ensemble 5/5] seed=9527 best_iter=36
+  [α 学习] 验证集 α 扫描: α*=0.48, val_MAE_min=32.499 (α=1 时 MAE=34.516)
+  test: MAE=36.91, gain=+7.55%, α*=0.48
+
+======================================================================
+[5/6] 训练方案 C3: GCN lag+diff (64维) (115 特征)
+======================================================================
+  [ensemble 1/5] seed=42 best_iter=46
+  [ensemble 2/5] seed=7 best_iter=50
+  [ensemble 3/5] seed=137 best_iter=47
+  [ensemble 4/5] seed=2024 best_iter=44
+  [ensemble 5/5] seed=9527 best_iter=35
+  [α 学习] 验证集 α 扫描: α*=0.47, val_MAE_min=32.553 (α=1 时 MAE=34.695)
+  test: MAE=36.89, gain=+7.58%, α*=0.47
+
+======================================================================
+[5/6] 训练方案 C4: GCN 三形态 (96维) (147 特征)
+======================================================================
+  [ensemble 1/5] seed=42 best_iter=42
+  [ensemble 2/5] seed=7 best_iter=50
+  [ensemble 3/5] seed=137 best_iter=47
+  [ensemble 4/5] seed=2024 best_iter=42
+  [ensemble 5/5] seed=9527 best_iter=46
+  [α 学习] 验证集 α 扫描: α*=0.47, val_MAE_min=32.582 (α=1 时 MAE=34.801)
+  test: MAE=36.91, gain=+7.54%, α*=0.47
+
+[6/6] 保存结果...
+
+======================================================================
+对比结果
+======================================================================
+方案                               特征数      测试MAE      vs B7%     vs A       α*    
+--------------------------------------------------------------------------------
+A: 无天气                           51       36.92      +7.52      +0.00      0.48  
+B: 原始 F组 (lag+diff, 8维)          59       36.79      +7.84      -0.13      0.44  
+C1: GCN 当前 (32维)                 83       36.90      +7.56      -0.02      0.47  
+C2: GCN lag1d (32维)              83       36.91      +7.55      -0.01      0.48  
+C3: GCN lag+diff (64维)           115      36.89      +7.58      -0.02      0.47  
+C4: GCN 三形态 (96维)                147      36.91      +7.54      -0.01      0.47  
+
+======================================================================
+增益分解
+======================================================================
+A → B（原始 F组 lag+diff）: -0.13 元
+A → C1（GCN 当前）:          -0.02 元
+A → C2（GCN lag1d）:         -0.01 元
+A → C3(GCN lag+diff):       -0.02 元
+A → C4(GCN 三形态):         -0.01 元
+
+最优方案: B: 原始 F组 (lag+diff, 8维), MAE = 36.79
+
+实验完成。

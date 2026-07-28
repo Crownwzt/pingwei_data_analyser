@@ -1,0 +1,118 @@
+/data/ztwen2/project_dir/pingwei_data_analyser/experiments/gcn_weather_comparison_v3.py:76: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  df_all['year'] = df_all['datetime'].dt.year
+/data/ztwen2/project_dir/pingwei_data_analyser/experiments/gcn_weather_comparison_v3.py:77: PerformanceWarning: DataFrame is highly fragmented.  This is usually the result of calling `frame.insert` many times, which has poor performance.  Consider joining all columns at once using pd.concat(axis=1) instead. To get a de-fragmented frame, use `newframe = frame.copy()`
+  df_all['month'] = df_all['datetime'].dt.month
+======================================================================
+GCN v3 - 标准化 + 组合方案
+======================================================================
+训练/验证/测试: 7056/720/744
+
+======================================================================
+A: 无天气 (51 特征)
+======================================================================
+  [ensemble 1/5] seed=42 best_iter=42
+  [ensemble 2/5] seed=7 best_iter=54
+  [ensemble 3/5] seed=137 best_iter=41
+  [ensemble 4/5] seed=2024 best_iter=43
+  [ensemble 5/5] seed=9527 best_iter=44
+  [α 学习] 验证集 α 扫描: α*=0.48, val_MAE_min=32.473 (α=1 时 MAE=34.298)
+→ test MAE=36.92, gain=+7.52%, α*=0.48
+
+======================================================================
+B: F 组原版 (8) (59 特征)
+======================================================================
+  [ensemble 1/5] seed=42 best_iter=40
+  [ensemble 2/5] seed=7 best_iter=43
+  [ensemble 3/5] seed=137 best_iter=41
+  [ensemble 4/5] seed=2024 best_iter=42
+  [ensemble 5/5] seed=9527 best_iter=46
+  [α 学习] 验证集 α 扫描: α*=0.44, val_MAE_min=32.362 (α=1 时 MAE=34.282)
+→ test MAE=36.79, gain=+7.84%, α*=0.44
+
+======================================================================
+C: GCN raw (32) (83 特征)
+======================================================================
+  [ensemble 1/5] seed=42 best_iter=42
+  [ensemble 2/5] seed=7 best_iter=50
+  [ensemble 3/5] seed=137 best_iter=47
+  [ensemble 4/5] seed=2024 best_iter=48
+  [ensemble 5/5] seed=9527 best_iter=35
+  [α 学习] 验证集 α 扫描: α*=0.47, val_MAE_min=32.542 (α=1 时 MAE=34.633)
+→ test MAE=36.90, gain=+7.56%, α*=0.47
+
+======================================================================
+D: GCN 标准化 (32) (83 特征)
+======================================================================
+  [ensemble 1/5] seed=42 best_iter=42
+  [ensemble 2/5] seed=7 best_iter=50
+  [ensemble 3/5] seed=137 best_iter=47
+  [ensemble 4/5] seed=2024 best_iter=48
+  [ensemble 5/5] seed=9527 best_iter=35
+  [α 学习] 验证集 α 扫描: α*=0.47, val_MAE_min=32.542 (α=1 时 MAE=34.633)
+→ test MAE=36.90, gain=+7.56%, α*=0.47
+
+======================================================================
+E: F 组 + GCN std (40) (91 特征)
+======================================================================
+  [ensemble 1/5] seed=42 best_iter=49
+  [ensemble 2/5] seed=7 best_iter=44
+  [ensemble 3/5] seed=137 best_iter=45
+  [ensemble 4/5] seed=2024 best_iter=46
+  [ensemble 5/5] seed=9527 best_iter=40
+  [α 学习] 验证集 α 扫描: α*=0.45, val_MAE_min=32.356 (α=1 时 MAE=34.260)
+→ test MAE=36.77, gain=+7.88%, α*=0.45
+
+======================================================================
+F: F 组 + GCN std lag+diff (72) (123 特征)
+======================================================================
+  [ensemble 1/5] seed=42 best_iter=41
+  [ensemble 2/5] seed=7 best_iter=43
+  [ensemble 3/5] seed=137 best_iter=51
+  [ensemble 4/5] seed=2024 best_iter=35
+  [ensemble 5/5] seed=9527 best_iter=38
+  [α 学习] 验证集 α 扫描: α*=0.46, val_MAE_min=32.524 (α=1 时 MAE=34.696)
+→ test MAE=36.81, gain=+7.80%, α*=0.46
+
+======================================================================
+对比结果汇总
+======================================================================
+方案                                       #feat   测试MAE      vs A      
+--------------------------------------------------------------------------------
+A: 无天气                                   51      36.92      +0.00
+B: F 组原版 (8)                             59      36.79      -0.13
+C: GCN raw (32)                          83      36.90      -0.02
+D: GCN 标准化 (32)                          83      36.90      -0.02
+E: F 组 + GCN std (40)                    91      36.77      -0.14
+F: F 组 + GCN std lag+diff (72)           123     36.81      -0.11
+
+======================================================================
+特征重要性对比: 方案 E (F 组 + GCN std) 中 GCN 排名
+======================================================================
+
+Top 20 特征:
+   1. 新能源渗透率_日前                               : 0.0570  
+   2. 日前出清均价(元/MWh)                           : 0.0503  
+   3. 光伏(MW)_日前                               : 0.0395  
+   4. 日前统一结算点电价(元/MWh)                        : 0.0365  
+   5. target_roll_mean_24_lag24               : 0.0308  
+   6. 新能源负荷(MW)_日前                            : 0.0275  
+   7. ghi_lag1d                               : 0.0267  [F组]
+   8. 月_sin                                   : 0.0251  
+   9. 月                                       : 0.0250  
+  10. target_roll_mean_168_lag24              : 0.0241  
+  11. 季节_秋                                    : 0.0227  
+  12. 日前平均申报电价(元/MWh)_日前                      : 0.0218  
+  13. target_lag_24h                          : 0.0207  
+  14. 小时_cos                                  : 0.0187  
+  15. 日前出清电量(MWh)                             : 0.0184  
+  16. target_lag_48h                          : 0.0177  
+  17. t2m_diff1d                              : 0.0175  [F组]
+  18. 月_sin2                                  : 0.0151  
+  19. t2m_lag1d                               : 0.0146  [F组]
+  20. bspi_diff30d                            : 0.0144  
+
+F 组特征排名: 平均 35.5，最高 7
+GCN 特征排名: 平均 67.3，最高 41
+→ 排名越靠前，重要性越高
+
+实验完成。
