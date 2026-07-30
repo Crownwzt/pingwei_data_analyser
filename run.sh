@@ -25,7 +25,8 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
-PY="/data/ztwen2/envs_dir/anaconda3/envs/pytorch-2.10/bin/python"
+# 优先使用环境变量 PY 指定的解释器；否则回退到当前 PATH 上的 python
+PY="${PY:-python}"
 
 # 模块顺序（pipeline 依赖顺序）—— MODULES_ORDER[i] = 第 i 个模块名
 MODULES_ORDER=("cleaning" "split" "correlation" "training" "evaluation")
@@ -95,13 +96,16 @@ resolve_modules() {
         usage; exit 1
     fi
 
-    # 验证 + 收集到 set
-    declare -A seen=()
+    # 验证 + 收集到 space-separated string (兼容 bash 3.2)
+    local seen=""
     local invalid=()
     for t in "${tokens[@]}"; do
         [[ -z "$t" ]] && continue
         if is_valid_module "$t"; then
-            seen["$t"]=1
+            # 用空格分隔避免关联数组
+            if [[ ! " $seen " =~ " $t " ]]; then
+                seen="$seen $t "
+            fi
         else
             invalid+=("$t")
         fi
@@ -116,7 +120,7 @@ resolve_modules() {
     # 按 MODULES_ORDER 顺序输出 (天然去重 + 拓扑序)
     SORTED_MODULES=()
     for m in "${MODULES_ORDER[@]}"; do
-        if [[ -n "${seen[$m]:-}" ]]; then
+        if [[ " $seen " =~ " $m " ]]; then
             SORTED_MODULES+=("$m")
         fi
     done
