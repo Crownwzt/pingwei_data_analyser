@@ -22,11 +22,11 @@
 # .~*
 # *~
 
-# # Python缓存
-# __pycache__/
-# *.pyc
-# *.pyd
-# *.pyo
+# Python缓存
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
 
 # # 模型权重
 # *.pth

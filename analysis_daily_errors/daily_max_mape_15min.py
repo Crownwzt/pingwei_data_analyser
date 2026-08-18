@@ -16,7 +16,10 @@
 图结构（每张 PNG）：
   上子图  ┌── 小时级：真实值 / 日前 / XGB 预测 (24 点)
           └── 标注每小时 |真实-预测| 的绝对误差与该点 MAPE
-  下子图  └── 15min 真实值 vs 15min 日前 (96 点，同日)
+  中子图  └── 15min 统一结算点电价：实时 vs 日前 (96 点，同日)
+  下子图  └── 15min 节点电价：实时 vs 日前 (96 点，同日)
+              与中子图的差额 = 阻塞 + 网损分量
+  注：中/下子图共享 x 轴与 y 轴范围，可上下对齐、直接目视对比幅度
 """
 from __future__ import annotations
 
@@ -43,15 +46,23 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 
 def setup_font():
-    # 与 src/common.py:setup_cn_font 完全一致：Noto Sans CJK JP 在 ttc 中
-    # 包含全部中文汉字，是 matplotlib 能识别到的可靠中文字体
+    # 中文字体候选，按优先级排列：
+    #   前段 = Linux/Windows 常见 CJK 字体（与 src/common.py:setup_cn_font 一致，
+    #          保证在原 Linux 服务器上选中的字体不变）
+    #   后段 = macOS 自带 CJK 字体（Linux 字体在 macOS 上全部缺失，
+    #          若不补充会回退到 DejaVu Sans —— 该字体无中文字形，图例会显示成方框）
     cand = ["Noto Sans CJK JP", "Noto Sans CJK SC", "WenQuanYi Zen Hei",
-            "WenQuanYi Micro Hei", "SimHei", "Microsoft YaHei"]
+            "WenQuanYi Micro Hei", "SimHei", "Microsoft YaHei",
+            "PingFang SC", "PingFang HK", "Hiragino Sans GB",
+            "Arial Unicode MS", "STHeiti", "Songti SC"]
     avail = {f.name for f in font_manager.fontManager.ttflist}
     chosen = next((c for c in cand if c in avail), None)
     if chosen:
         plt.rcParams["font.sans-serif"] = [chosen] + plt.rcParams["font.sans-serif"]
+    else:
+        print("[WARN] 未找到任何中文字体，图中中文将显示为方框")
     plt.rcParams["axes.unicode_minus"] = False
+    return chosen
 
 
 # ---------- 加载 ----------
@@ -79,9 +90,14 @@ def load_15min() -> pd.DataFrame:
     d = d.rename(columns={
         "日前统一结算点电价(元/MWh)": "da",
         "实时统一结算点电价(元/MWh)": "y_true",
+        # 节点电价：与统一结算点价的差额 = 阻塞 + 网损分量，
+        # 用于对比分析同一时刻"节点 vs 统一结算点"的价差来源
+        "日前节点电价(元/MWh)": "da_node",
+        "实时节点电价(元/MWh)": "rt_node",
     })
     d["date"] = d["datetime"].dt.date
-    return d[["datetime", "date", "y_true", "da"]].sort_values("datetime").reset_index(drop=True)
+    cols = ["datetime", "date", "y_true", "da", "da_node", "rt_node"]
+    return d[cols].sort_values("datetime").reset_index(drop=True)
 
 
 # ---------- 每日统计 ----------
@@ -118,11 +134,15 @@ def daily_summary(hourly: pd.DataFrame) -> pd.DataFrame:
 # ---------- 绘图 ----------
 def plot_one_day(hourly_day: pd.DataFrame, fifteen_day: pd.DataFrame,
                  meta: Dict, out_path: str) -> None:
-    fig, (ax1, ax2) = plt.subplots(
-        2, 1, figsize=(12, 8),
-        gridspec_kw={"height_ratios": [1.2, 1.0]},
+    # 三子图：小时级预测 / 15min 统一结算点价 / 15min 节点价
+    # 后两者拆开画，避免 4 条线挤在同一坐标系里互相遮挡；
+    # 两个 15min 子图共享 x 轴（同一时间基准），便于上下对齐读同一时刻
+    fig, (ax1, ax2, ax3) = plt.subplots(
+        3, 1, figsize=(12, 11),
+        gridspec_kw={"height_ratios": [1.2, 1.0, 1.0]},
         sharex=False,
     )
+    ax3.sharex(ax2)
 
     # 上：小时级对比（沿用 outputs/daily/test 图例配色）
     hd = hourly_day.sort_values("datetime")
@@ -138,8 +158,17 @@ def plot_one_day(hourly_day: pd.DataFrame, fifteen_day: pd.DataFrame,
     idx_max = hd["abs_err"].idxmax()
     peak = hd.loc[idx_max]
     ax1.axvline(peak["datetime"], color="red", ls=":", alpha=0.5)
+
+    # MAPE 分母保护标注：若真实值 < 10，标注实际分母被截断
+    y_true_abs = abs(peak['y_true'])
+    denom_used = max(y_true_abs, 10.0)
+    if y_true_abs < 10.0:
+        mape_note = f"MAPE={peak['mape']:.1f}% (分母截断@10, 实际真值={peak['y_true']:.1f})"
+    else:
+        mape_note = f"MAPE={peak['mape']:.1f}%"
+
     ax1.annotate(
-        f"最大误差 {peak['abs_err']:.1f} 元\nMAPE={peak['mape']:.1f}%\n"
+        f"最大误差 {peak['abs_err']:.1f} 元\n{mape_note}\n"
         f"真={peak['y_true']:.0f}  预={peak['y_pred']:.0f}",
         xy=(peak["datetime"], max(peak["y_true"], peak["y_pred"])),
         xytext=(10, 25), textcoords="offset points",
@@ -150,7 +179,7 @@ def plot_one_day(hourly_day: pd.DataFrame, fifteen_day: pd.DataFrame,
     ax1.set_ylabel("电价 (元/MWh)")
     ax1.set_title(
         f"[test] {meta['date']}  日内 24 点预测  "
-        f"MaxMAPE={meta['max_mape']:.1f}%  "
+        f"MaxMAPE={meta['max_mape']:.1f}% (分母≥10元)  "
         f"MaxAbsErr={meta['max_abs_err']:.1f}  "
         f"MAE={meta['mae']:.2f}  TrMAE={meta['trmae10']:.2f}",
         fontsize=11,
@@ -160,24 +189,44 @@ def plot_one_day(hourly_day: pd.DataFrame, fifteen_day: pd.DataFrame,
     ax1.grid(alpha=0.3)
     ax1.legend(loc="best", fontsize=9)
 
-    # 下：15min 真实值 vs 日前（同风格）
+    # 中：15min 统一结算点电价（实时 vs 日前）
+    # 下：15min 节点电价（实时 vs 日前）—— 与上方统一结算点价的差额即阻塞 + 网损分量
     if fifteen_day is not None and len(fifteen_day) > 0:
         fd = fifteen_day.sort_values("datetime")
-        ax2.plot(fd["datetime"], fd["y_true"], label="实时价 (15min)",
-                 color="#4C72B0", lw=1.2)
-        ax2.plot(fd["datetime"], fd["da"], label="日前价 (15min)",
-                 color="#888", lw=1.2, ls=":")
-        ax2.fill_between(fd["datetime"], fd["y_true"], fd["da"],
-                         where=fd["y_true"] > fd["da"],
-                         color="#C44E52", alpha=0.12, label="实时>日前")
-        ax2.fill_between(fd["datetime"], fd["y_true"], fd["da"],
-                         where=fd["y_true"] < fd["da"],
-                         color="#4C72B0", alpha=0.10, label="实时<日前")
-    ax2.set_xlabel("时间"); ax2.set_ylabel("15min 电价 (元/MWh)")
-    ax2.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
-    ax2.xaxis.set_major_locator(mdates.HourLocator(interval=2))
-    ax2.grid(alpha=0.3)
-    ax2.legend(loc="best", fontsize=9, ncol=2)
+
+        # 两个子图统一配色语义：实时=蓝色实线，日前=灰色虚线
+        for ax, rt_col, da_col, tag in (
+            (ax2, "y_true", "da", "统一结算点"),
+            (ax3, "rt_node", "da_node", "节点"),
+        ):
+            ax.plot(fd["datetime"], fd[rt_col], label=f"实时{tag}电价 (15min)",
+                    color="#4C72B0", lw=1.3)
+            ax.plot(fd["datetime"], fd[da_col], label=f"日前{tag}电价 (15min)",
+                    color="#888", lw=1.2, ls=":")
+            ax.fill_between(fd["datetime"], fd[rt_col], fd[da_col],
+                            where=fd[rt_col] > fd[da_col],
+                            color="#C44E52", alpha=0.12, label="实时>日前")
+            ax.fill_between(fd["datetime"], fd[rt_col], fd[da_col],
+                            where=fd[rt_col] < fd[da_col],
+                            color="#4C72B0", alpha=0.10, label="实时<日前")
+
+        # 两个 15min 子图共用同一 y 轴范围，保证幅度可直接目视对比
+        lo = float(min(fd[["y_true", "da", "rt_node", "da_node"]].min()))
+        hi = float(max(fd[["y_true", "da", "rt_node", "da_node"]].max()))
+        pad = max((hi - lo) * 0.08, 5.0)
+        ax2.set_ylim(lo - pad, hi + pad)
+        ax3.set_ylim(lo - pad, hi + pad)
+
+    ax2.set_ylabel("统一结算点价 (元/MWh)")
+    ax2.set_title("15min 统一结算点电价：实时 vs 日前", fontsize=10)
+    ax3.set_xlabel("时间")
+    ax3.set_ylabel("节点价 (元/MWh)")
+    ax3.set_title("15min 节点电价：实时 vs 日前", fontsize=10)
+    for ax in (ax2, ax3):
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=2))
+        ax.grid(alpha=0.3)
+        ax.legend(loc="best", fontsize=8, ncol=2)
 
     plt.tight_layout()
     plt.savefig(out_path, dpi=110, bbox_inches="tight")
@@ -209,7 +258,8 @@ def plot_ranking_comparison(daily: pd.DataFrame, out_path: str) -> None:
 
 # ---------- 主流程 ----------
 def main():
-    setup_font()
+    font = setup_font()
+    print(f"[0/4] 中文字体: {font or '未找到（中文将显示为方框）'}")
     print(f"[1/4] 加载小时级测试集数据: {METRICS_PKL}")
     hourly = load_test_hourly()
     print(f"      测试集 n = {len(hourly)},  {hourly['date'].nunique()} 天")

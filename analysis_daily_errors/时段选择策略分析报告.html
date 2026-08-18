@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>电力现货交易时段选择策略分析</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+                         "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            background: #f5f7fa;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .summary-box {
+            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+            border-left: 4px solid #667eea;
+            padding: 24px;
+            margin-bottom: 32px;
+            border-radius: 4px;
+        }
+
+        .summary-box h2 {
+            color: #667eea;
+            margin-bottom: 16px;
+            font-size: 20px;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .metric {
+            text-align: center;
+        }
+
+        .metric .value {
+            font-size: 36px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .metric .label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        h2 {
+            font-size: 22px;
+            color: #333;
+            margin: 32px 0 16px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        h3 {
+            font-size: 18px;
+            color: #555;
+            margin: 24px 0 12px 0;
+        }
+
+        p {
+            margin-bottom: 16px;
+            color: #555;
+            font-size: 15px;
+        }
+
+        .figure {
+            margin: 32px 0;
+            text-align: center;
+        }
+
+        .figure img {
+            max-width: 100%;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .figure-caption {
+            font-size: 14px;
+            color: #666;
+            margin-top: 12px;
+            font-style: italic;
+        }
+
+        .insight-box {
+            background: #f0f9ff;
+            border-left: 4px solid #3b82f6;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .insight-box h4 {
+            color: #1e40af;
+            margin-bottom: 12px;
+            font-size: 16px;
+        }
+
+        .insight-box ul {
+            margin-left: 20px;
+        }
+
+        .insight-box li {
+            margin-bottom: 8px;
+            color: #374151;
+        }
+
+        .conclusion-box {
+            background: #d1fae5;
+            border-left: 4px solid #059669;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .conclusion-box strong {
+            color: #065f46;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        thead {
+            background: #f9fafb;
+        }
+
+        th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #374151;
+            border-bottom: 2px solid #e5e7eb;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+
+        tbody tr:hover {
+            background: #f9fafb;
+        }
+
+        code {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Monaco", "Consolas", monospace;
+            font-size: 13px;
+            color: #dc2626;
+        }
+
+        .highlight {
+            background: #fef3c7;
+            padding: 2px 4px;
+            border-radius: 2px;
+            font-weight: 600;
+        }
+
+        footer {
+            background: #f9fafb;
+            padding: 24px 40px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            color: #6b7280;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>电力现货交易时段选择策略分析</h1>
+            <p>基于验证集斩杀线法 | 分析周期：2025年11-12月</p>
+        </header>
+
+        <div class="content">
+            <!-- 核心结论 -->
+            <div class="summary-box">
+                <h2>核心结论</h2>
+                <p>通过验证集斩杀线法，识别出 <strong>7 个高收益交易时段</strong>（8-11h, 13-15h），测试集验证结果：</p>
+                <div class="metrics">
+                    <div class="metric">
+                        <div class="value">7.43</div>
+                        <div class="label">元/MWh（每小时平均收益）</div>
+                    </div>
+                    <div class="metric">
+                        <div class="value">3.0×</div>
+                        <div class="label">全时段效率（200.7%提升）</div>
+                    </div>
+                    <div class="metric">
+                        <div class="value">29%</div>
+                        <div class="label">参与时长（203/696小时）</div>
+                    </div>
+                    <div class="metric">
+                        <div class="value">88%</div>
+                        <div class="label">累计收益保留率</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 分析方法 -->
+            <h2>一、分析方法</h2>
+            <p><strong>数据集</strong>：验证集（11月，696小时）用于时段排序和K值选择，测试集（12月，696小时）用于策略验证。</p>
+
+            <p><strong>斩杀线法</strong>：</p>
+            <ol style="margin-left: 24px; color: #555;">
+                <li>计算验证集全时段平均收益作为<span class="highlight">斩杀线</span>（2.221 元/MWh）</li>
+                <li>将24小时按验证集收益从高到低排序</li>
+                <li>从高到低遍历，<strong>第一个低于斩杀线的位置即为最优K</strong></li>
+                <li>只保留排序前K的时段交易</li>
+            </ol>
+
+            <p><strong>收益定义</strong>：<code>收益 = |日前价 - 实时价| - |XGB预测 - 实时价|</code>（正值表示模型比日前价更优）</p>
+
+            <!-- 关键图表 -->
+            <h2>二、分析结果</h2>
+
+            <div class="figure">
+                <img src="topk_hour_selection/topk_hour_selection.png" alt="时段选择分析图">
+                <div class="figure-caption">图1：时段选择策略完整分析（5张子图）</div>
+            </div>
+
+            <h3>图表解读</h3>
+
+            <div class="insight-box">
+                <h4>📈 左上图：每小时平均收益 vs Top-K</h4>
+                <ul>
+                    <li><strong>验证集（蓝线）</strong>：随K增大逐步下降，K=7后跌破斩杀线2.22元</li>
+                    <li><strong>测试集（深蓝线）</strong>：K=5-10区间形成平台（6.5-7.5元），<strong>K=7达峰7.43元</strong></li>
+                    <li><strong>红色虚线K=7</strong>：验证集斩杀线恰好对应测试集峰值区 → <span class="highlight">泛化性良好</span></li>
+                </ul>
+            </div>
+
+            <div class="insight-box">
+                <h4>📊 右上图：测试集累计总收益 vs Top-K</h4>
+                <ul>
+                    <li>K=7时累计1508元（用29%时长获取88%收益）</li>
+                    <li>K=24（全时段）累计1719元，但效率低（2.47元/小时）</li>
+                    <li><strong>K=7是效率与规模的最佳平衡点</strong></li>
+                </ul>
+            </div>
+
+            <div class="insight-box">
+                <h4>📉 左下图：24小时收益对比（按验证集排序）</h4>
+                <ul>
+                    <li><strong>前7个柱（9,11,8,10,14,13,15h）</strong>：验证集和测试集都高于基准，双色柱都很高</li>
+                    <li><strong>右侧红色阴影区（K>7）</strong>：验证集低于斩杀线，测试集也多为低收益或负值</li>
+                    <li><span class="highlight">验证集的排序在测试集上完全复现</span> → 策略稳健可靠</li>
+                </ul>
+            </div>
+
+            <div class="insight-box">
+                <h4>🔍 底部图：收益成因分析（自然小时0-23）</h4>
+                <ul>
+                    <li><strong>橙柱（日前误差）</strong>：夜间10-25元，<strong>9-15点飙到65-116元</strong></li>
+                    <li><strong>绿柱（XGB误差）</strong>：始终比橙柱矮一截 → 模型持续改进日前价</li>
+                    <li><strong>红线（实时价波动std）</strong>：9-15点从~25飙到~175 → 光伏大发导致剧烈波动</li>
+                    <li><strong>蓝线（收益benefit）</strong>：只在9-15点抬头，与日前误差高度同步（<span class="highlight">相关系数0.89</span>）</li>
+                </ul>
+            </div>
+
+            <!-- 因果机制 -->
+            <h2>三、为什么收益集中在8-15h？</h2>
+
+            <div class="conclusion-box">
+                <strong>因果链</strong>：中午光伏大发 → 实时电价暴跌（150-250元，夜间~420元）→ 价格剧烈波动（std从~25飙到~175）→ 日前价预测失准（误差65-116元）→ XGB模型纠错空间大（改进7-14%）→ <strong>绝对收益放大（因基数大，是夜间的5-10倍）</strong>
+            </div>
+
+            <p><strong>关键数据对比</strong>：</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>时段</th>
+                        <th>实时价(元/MWh)</th>
+                        <th>价格波动(std)</th>
+                        <th>日前误差</th>
+                        <th>收益</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="background: #d1fae5;">
+                        <td><strong>白天(9-15h)</strong></td>
+                        <td>150-315</td>
+                        <td><strong style="color: #dc2626;">70-180</strong></td>
+                        <td><strong style="color: #dc2626;">65-116</strong></td>
+                        <td><strong style="color: #059669;">5-12</strong></td>
+                    </tr>
+                    <tr>
+                        <td>夜间(0-7,16-23h)</td>
+                        <td>405-427</td>
+                        <td>19-54</td>
+                        <td>8-25</td>
+                        <td>-0.4-1.2</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p><strong>结论</strong>：收益不是因为模型在白天"更聪明"，而是因为<span class="highlight">光伏导致的价格崩塌给日前价留下了巨大的纠错空间</span>。这是电网结构性特征，具有长期可持续性。</p>
+
+            <!-- 策略建议 -->
+            <h2>四、实施建议</h2>
+
+            <h3>4.1 推荐策略：K=7（保守高效）</h3>
+            <p><strong>交易时段</strong>：只在 <code>8h, 9h, 10h, 11h, 13h, 14h, 15h</code> 这7个时段交易</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>指标</th>
+                        <th>K=7策略</th>
+                        <th>全时段K=24</th>
+                        <th>对比</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>每小时平均收益</td>
+                        <td><strong style="color: #059669;">7.43 元/MWh</strong></td>
+                        <td>2.47 元/MWh</td>
+                        <td><strong style="color: #059669;">+200.7%</strong></td>
+                    </tr>
+                    <tr>
+                        <td>累计收益（月度）</td>
+                        <td>1508 元</td>
+                        <td>1719 元</td>
+                        <td>-12.3%</td>
+                    </tr>
+                    <tr>
+                        <td>参与时长</td>
+                        <td>29.2%</td>
+                        <td>100%</td>
+                        <td>节省70.8%</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p><strong>适用场景</strong>：资源受限（算力/人力不足24小时监控）、追求高效率、风险厌恶型交易者</p>
+
+            <h3>4.2 激进策略：K=24（全时段）</h3>
+            <p>追求累计收益最大，但效率低（2.47元/小时），适合算力充足、追求规模的场景。</p>
+
+            <!-- 风险提示 -->
+            <h2>五、风险与限制</h2>
+            <ul style="margin-left: 24px; color: #555;">
+                <li><strong>样本期局限</strong>：仅覆盖秋冬2个月（11-12月），春夏季光伏模式可能不同，需持续验证</li>
+                <li><strong>电网调度变化</strong>：若增加储能调峰或调整光伏规则，中午价格崩塌可能缓解，建议<span class="highlight">按季度重新校准</span></li>
+                <li><strong>模型衰减</strong>：需监控长期性能，斩杀线法会自动剔除失效时段</li>
+                <li><strong>极端事件</strong>：黑天鹅事件未在历史数据体现，建议设置止损阈值</li>
+            </ul>
+
+            <!-- 单位说明 -->
+            <h2>六、附录</h2>
+            <p><strong>单位说明</strong>：</p>
+            <ul style="margin-left: 24px; color: #555;">
+                <li>电价单位：<code>元/MWh</code>（元每兆瓦时），1 MWh = 1000度，400元/MWh = 0.4元/度</li>
+                <li>收益单位：<code>元/MWh</code>（每交易1MWh电量的收益）</li>
+                <li>实际收益 = 单位收益 × 交易电量（MW）</li>
+            </ul>
+
+            <p><strong>数据来源</strong>：<code>outputs/metrics.pkl</code>（验证集11月+测试集12月，共696×2小时）</p>
+            <p><strong>分析脚本</strong>：<code>analysis_daily_errors/topk_hour_selection.py</code></p>
+            <p><strong>图表文件</strong>：<code>analysis_daily_errors/topk_hour_selection/topk_hour_selection.png</code></p>
+        </div>
+
+        <footer>
+            <p><strong>结论</strong>：验证集斩杀线法成功识别出7个高效时段（8-15h），测试集验证效率提升3倍，策略具有良好的跨月泛化能力和物理可解释性。</p>
+            <p style="margin-top: 12px; font-size: 12px; color: #9ca3af;">
+                本报告基于历史数据分析，不构成投资建议。实际交易需结合实时市场情况和风险管理。
+            </p>
+        </footer>
+    </div>
+</body>
+</html>
