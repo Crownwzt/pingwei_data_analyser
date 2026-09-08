@@ -221,32 +221,38 @@
     <div class="container">
         <header>
             <h1>电力现货交易时段选择策略分析</h1>
-            <p>基于验证集斩杀线法 | 分析周期：2025年11-12月</p>
+            <p>验证集选段 + 测试集验证 + 稳健性检验 | 分析周期：2025年11-12月</p>
         </header>
 
         <div class="content">
             <!-- 核心结论 -->
             <div class="summary-box">
                 <h2>核心结论</h2>
-                <p>通过验证集斩杀线法，识别出 <strong>7 个高收益交易时段</strong>（8-11h, 13-15h），测试集验证结果：</p>
+                <p>白天价格爬坡时段（9-15h）存在由光伏引发的<strong>结构性收益机会</strong>：日前价在此频繁失准，XGB 模型有纠错空间。集中在这些时段交易，测试集（12月）效率约为全时段的 <strong>3 倍</strong>。但收益<strong>高度集中且波动大</strong>，需配合仓位与止损管理，不宜视为低风险策略。</p>
                 <div class="metrics">
                     <div class="metric">
                         <div class="value">7.43</div>
-                        <div class="label">元/MWh（每小时平均收益）</div>
+                        <div class="label">元/MWh（选中时段每小时均值）</div>
                     </div>
                     <div class="metric">
                         <div class="value">3.0×</div>
-                        <div class="label">全时段效率（200.7%提升）</div>
+                        <div class="label">全时段效率（+200.7%）</div>
                     </div>
                     <div class="metric">
                         <div class="value">29%</div>
                         <div class="label">参与时长（203/696小时）</div>
                     </div>
                     <div class="metric">
-                        <div class="value">88%</div>
-                        <div class="label">累计收益保留率</div>
+                        <div class="value" style="color:#059669;">88%</div>
+                        <div class="label">累计收益保留率（1508/1719元）</div>
+                    </div>
+                    <div class="metric">
+                        <div class="value" style="color:#dc2626;">45%</div>
+                        <div class="label">交易日亏损占比（13/29天）</div>
                     </div>
                 </div>
+                <p style="margin-top:12px; margin-bottom:0; font-size:13px; color:#666;">↑ 前四项是<strong>效率上行面</strong>（少花 71% 时间拿到 88% 收益）；末项是<strong>风险下行面</strong>。两面并看才完整。</p>
+                <p style="margin-top:16px; margin-bottom:0; font-size:14px;">⚠️ 每小时均值 7.43 元由少数极端日拉高（<strong>日收益中位数仅 0.62 元，Top3 天贡献 56% 收益</strong>）。Bootstrap 95% 置信区间 [3.17, 11.84]，区间宽。结论稳健但收益不平滑。</p>
             </div>
 
             <!-- 分析方法 -->
@@ -260,6 +266,7 @@
                 <li>从高到低遍历，<strong>第一个低于斩杀线的位置即为最优K</strong></li>
                 <li>只保留排序前K的时段交易</li>
             </ol>
+            <p style="font-size:14px; color:#666;">斩杀线法只是"选段工具"的一种。第四节会用稳健性检验对比它与朴素固定窗、全时段方案，看它是否真的带来额外收益。</p>
 
             <p><strong>收益定义</strong>：<code>收益 = |日前价 - 实时价| - |XGB预测 - 实时价|</code>（正值表示模型比日前价更优）</p>
 
@@ -294,87 +301,160 @@
             <div class="insight-box">
                 <h4>📉 左下图：24小时收益对比（按验证集排序）</h4>
                 <ul>
-                    <li><strong>前7个柱（9,11,8,10,14,13,15h）</strong>：验证集和测试集都高于基准，双色柱都很高</li>
-                    <li><strong>右侧红色阴影区（K>7）</strong>：验证集低于斩杀线，测试集也多为低收益或负值</li>
-                    <li><span class="highlight">验证集的排序在测试集上完全复现</span> → 策略稳健可靠</li>
+                    <li><strong>前6个高收益小时（9,10,11,13,14,15h）</strong>：验证集和测试集均明显高于基准，是稳定的核心时段</li>
+                    <li><strong>第7位 8h 未复现</strong>：验证集 6.00 元/h，但测试集仅 <strong>0.48 元/h</strong> → 存在季节漂移（见第三节，12月日出推迟致 8h 光伏减少 39%）</li>
+                    <li>验证集排序在测试集上<span class="highlight">中等程度迁移（Spearman ρ=0.61）</span>，Top7 重叠 6 个，非"完全复现"。核心 6 时段可靠，边缘时段需谨慎</li>
                 </ul>
             </div>
 
             <div class="insight-box">
                 <h4>🔍 底部图：收益成因分析（自然小时0-23）</h4>
                 <ul>
-                    <li><strong>橙柱（日前误差）</strong>：夜间10-25元，<strong>9-15点飙到65-116元</strong></li>
-                    <li><strong>绿柱（XGB误差）</strong>：始终比橙柱矮一截 → 模型持续改进日前价</li>
-                    <li><strong>红线（实时价波动std）</strong>：9-15点从~25飙到~175 → 光伏大发导致剧烈波动</li>
-                    <li><strong>蓝线（收益benefit）</strong>：只在9-15点抬头，与日前误差高度同步（<span class="highlight">相关系数0.89</span>）</li>
+                    <li><strong>橙柱（日前误差）</strong>：夜间 8-25 元，<strong>9-15 点飙到 65-116 元</strong></li>
+                    <li><strong>绿柱（XGB误差）</strong>：白天比橙柱矮一截 → 模型在爬坡时段改进了日前价</li>
+                    <li><strong>红线（实时价波动std）</strong>：9-15 点从 ~25 飙到 ~180 → 光伏大发导致剧烈波动</li>
+                    <li><strong>蓝线（收益benefit）</strong>：在 9-11h、13-15h 抬头，但<span class="highlight">正午 12h 收益≈0</span> —— 光伏最强、误差最大处收益反而低（下节解释）</li>
                 </ul>
             </div>
 
             <!-- 因果机制 -->
-            <h2>三、为什么收益集中在8-15h？</h2>
+            <h2>三、为什么收益集中在白天爬坡时段？</h2>
 
             <div class="conclusion-box">
-                <strong>因果链</strong>：中午光伏大发 → 实时电价暴跌（150-250元，夜间~420元）→ 价格剧烈波动（std从~25飙到~175）→ 日前价预测失准（误差65-116元）→ XGB模型纠错空间大（改进7-14%）→ <strong>绝对收益放大（因基数大，是夜间的5-10倍）</strong>
+                <strong>因果链</strong>：白天光伏大发（正午出力 ~4100MW，夜间 ~0）→ 净负荷下压 → 实时电价暴跌（正午 ~153 元，夜间 ~420 元）→ 价格剧烈波动（std 从 ~25 飙到 ~180）→ 日前价预测失准（误差 65-116 元）→ <strong>在价格快速切换的爬坡时段，XGB 比日前价更能捕捉拐点 → 收益放大</strong>
             </div>
 
-            <p><strong>关键数据对比</strong>：</p>
+            <div class="insight-box" style="background:#fff7ed; border-left-color:#ea580c;">
+                <h4>⚠️ 关键修正：收益并非集中在光伏最强的正午，而在两侧爬坡段</h4>
+                <ul>
+                    <li><strong>正午 12h 悖论</strong>：光伏最强、电价最低（153 元）、日前误差很大（65 元），但收益仅 <strong>0.6 元/h、改进率 0.9%</strong>。原因：此时日前价和 XGB 都同样失准（误差都 ~65 元），模型<strong>没有相对纠错空间</strong>。</li>
+                    <li><strong>收益真正来源</strong>：上午 9-11h 与下午 13-15h 的<strong>价格爬坡段</strong>，改进率 9-14%。价格在此剧烈切换，日前价滞后，XGB 抓住拐点。</li>
+                    <li>因此"收益 = |日前误差| − |XGB误差|"衡量的是<strong>相对优势</strong>，不是误差绝对值。误差大 ≠ 收益高。</li>
+                </ul>
+            </div>
+
+            <p><strong>关键数据对比（测试集12月，实际光伏/负荷来自 _实际 列）</strong>：</p>
             <table>
                 <thead>
                     <tr>
                         <th>时段</th>
+                        <th>光伏出力(MW)</th>
                         <th>实时价(元/MWh)</th>
                         <th>价格波动(std)</th>
                         <th>日前误差</th>
+                        <th>改进率</th>
                         <th>收益</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr style="background: #d1fae5;">
-                        <td><strong>白天(9-15h)</strong></td>
-                        <td>150-315</td>
-                        <td><strong style="color: #dc2626;">70-180</strong></td>
-                        <td><strong style="color: #dc2626;">65-116</strong></td>
+                        <td><strong>爬坡段(9-11,13-15h)</strong></td>
+                        <td>2100-4100</td>
+                        <td>163-314</td>
+                        <td>144-185</td>
+                        <td>68-116</td>
+                        <td><strong style="color: #059669;">6-14%</strong></td>
                         <td><strong style="color: #059669;">5-12</strong></td>
                     </tr>
                     <tr>
+                        <td>正午谷底(12h)</td>
+                        <td>~4100</td>
+                        <td>153</td>
+                        <td>177</td>
+                        <td>65</td>
+                        <td style="color:#dc2626;">0.9%</td>
+                        <td>0.6</td>
+                    </tr>
+                    <tr>
                         <td>夜间(0-7,16-23h)</td>
+                        <td>~0</td>
                         <td>405-427</td>
-                        <td>19-54</td>
+                        <td>19-56</td>
                         <td>8-25</td>
+                        <td>0-7%</td>
                         <td>-0.4-1.2</td>
                     </tr>
                 </tbody>
             </table>
+            <p style="font-size:13px; color:#888;">相关性（测试集小时级）：光伏出力 vs 实时价 <code>r=-0.97</code>，光伏 vs 价格波动 <code>r=0.96</code>，日前误差 vs 收益 <code>r=0.89</code>。</p>
 
-            <p><strong>结论</strong>：收益不是因为模型在白天"更聪明"，而是因为<span class="highlight">光伏导致的价格崩塌给日前价留下了巨大的纠错空间</span>。这是电网结构性特征，具有长期可持续性。</p>
+            <p><strong>结论</strong>：收益源于<span class="highlight">光伏驱动的价格波动给日前价留下的纠错空间</span>，这是电网结构性特征，具有一定可持续性。但纠错空间集中在价格切换的爬坡时段，且<strong>时段边界随季节漂移</strong>（12月日出推迟，8h 从"有效"退化为"无效"），需按季度重新校准。</p>
+
+            <!-- 稳健性检验 -->
+            <h2>四、稳健性检验</h2>
+            <p>下面三问检验上述结论能否成立：收益稳不稳、排序能不能迁移、复杂方法值不值。</p>
+
+            <div class="figure">
+                <img src="topk_robustness/topk_robustness.png" alt="稳健性检验图">
+                <div class="figure-caption">图2：稳健性检验（日度收益分布 / 极端日依赖 / 排序迁移 / 方案对比）</div>
+            </div>
+
+            <div class="insight-box">
+                <h4>Q1 收益稳不稳？——高度集中，非平滑</h4>
+                <ul>
+                    <li>每小时均值 7.43 元，但<strong>日收益中位数仅 0.62 元</strong>：均值被少数极端日拉高</li>
+                    <li><strong>Top3 交易日贡献 56% 的总收益</strong>；剔除收益最高的 4 天，每小时均值即从 7.43 跌到 2.60，跌破全时段基准 2.47</li>
+                    <li><strong>45% 的交易日（13/29）实际亏损</strong>，逐时胜率 58.6%，日收益 std 高达 18.9</li>
+                    <li>Bootstrap 95% 置信区间 [3.17, 11.84] —— 优势方向可信（下界仍 &gt; 全时段），但幅度不确定性大</li>
+                </ul>
+            </div>
+
+            <div class="insight-box">
+                <h4>Q2 排序能迁移吗？——核心时段能，边缘时段不能</h4>
+                <ul>
+                    <li>验证集 vs 测试集小时收益 <strong>Spearman ρ=0.61</strong>（中等正相关，非"完全复现"）</li>
+                    <li>验证集 Top7=[8,9,10,11,13,14,15]，测试集 Top7=[7,9,10,11,13,14,15]，<strong>重叠 6 个</strong></li>
+                    <li>分歧在边界：<strong>8h</strong>（验证选中但测试失效）与 <strong>7h</strong>（测试有效但验证漏掉），均因 12 月日出推迟、光伏时窗右移</li>
+                    <li>→ 核心 6 时段（9,10,11,13,14,15h）稳定可靠；边缘时段（7h/8h）随季节变动，是校准重点</li>
+                </ul>
+            </div>
+
+            <div class="insight-box">
+                <h4>Q3 斩杀线法值吗？——与朴素固定窗几乎等效</h4>
+                <table style="margin:8px 0;">
+                    <thead>
+                        <tr><th>方案</th><th>K</th><th>每小时均值</th><th>95% CI</th><th>亏损日%</th><th>累计</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr style="background:#d1fae5;"><td>斩杀线 Top7</td><td>7</td><td><strong>7.43</strong></td><td>[3.17, 11.84]</td><td>45%</td><td>1508</td></tr>
+                        <tr><td>固定窗 9-15h</td><td>7</td><td>7.45</td><td>[2.61, 12.30]</td><td>45%</td><td>1512</td></tr>
+                        <tr><td>固定窗 8-15h</td><td>8</td><td>6.58</td><td>[2.37, 10.86]</td><td>45%</td><td>1526</td></tr>
+                        <tr><td>全时段 24h</td><td>24</td><td>2.47</td><td>[1.10, 3.89]</td><td>41%</td><td>1719</td></tr>
+                    </tbody>
+                </table>
+                <ul>
+                    <li>斩杀线 Top7（7.43）与直接固定交易 <strong>9-15h（7.45）收益几乎相同</strong>，置信区间大幅重叠 → 斩杀线法未带来可测量的额外收益</li>
+                    <li><strong>真正的价值在于"筛掉夜间无效时段"这个动作本身</strong>，而非具体用哪种排序算法。业务上直接采用固定窗 9-15h 即可，更简单、无需依赖验证集调参</li>
+                </ul>
+            </div>
 
             <!-- 策略建议 -->
-            <h2>四、实施建议</h2>
+            <h2>五、实施建议</h2>
 
-            <h3>4.1 推荐策略：K=7（保守高效）</h3>
-            <p><strong>交易时段</strong>：只在 <code>8h, 9h, 10h, 11h, 13h, 14h, 15h</code> 这7个时段交易</p>
+            <h3>5.1 推荐策略：固定窗 9-15h（简单稳健）</h3>
+            <p><strong>交易时段</strong>：固定在 <code>9h, 10h, 11h, 12h, 13h, 14h, 15h</code> 交易。相比斩杀线 Top7，收益等效但无需每月用验证集重新排序，且不含季节漂移风险的 8h。</p>
 
             <table>
                 <thead>
                     <tr>
                         <th>指标</th>
-                        <th>K=7策略</th>
-                        <th>全时段K=24</th>
+                        <th>固定窗 9-15h</th>
+                        <th>全时段 24h</th>
                         <th>对比</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
                         <td>每小时平均收益</td>
-                        <td><strong style="color: #059669;">7.43 元/MWh</strong></td>
+                        <td><strong style="color: #059669;">7.45 元/MWh</strong></td>
                         <td>2.47 元/MWh</td>
-                        <td><strong style="color: #059669;">+200.7%</strong></td>
+                        <td><strong style="color: #059669;">+201%</strong></td>
                     </tr>
                     <tr>
                         <td>累计收益（月度）</td>
-                        <td>1508 元</td>
+                        <td>1512 元</td>
                         <td>1719 元</td>
-                        <td>-12.3%</td>
+                        <td>-12%</td>
                     </tr>
                     <tr>
                         <td>参与时长</td>
@@ -382,39 +462,56 @@
                         <td>100%</td>
                         <td>节省70.8%</td>
                     </tr>
+                    <tr>
+                        <td>亏损日占比</td>
+                        <td style="color:#dc2626;">45%</td>
+                        <td>41%</td>
+                        <td>略高（收益更集中）</td>
+                    </tr>
                 </tbody>
             </table>
 
-            <p><strong>适用场景</strong>：资源受限（算力/人力不足24小时监控）、追求高效率、风险厌恶型交易者</p>
+            <p><strong>适用场景</strong>：资源受限（无法 24 小时监控）、追求单位时间效率。<strong>注意</strong>：因 45% 交易日亏损、收益高度集中，必须配合仓位控制与止损，不适合无风险预算的场景。</p>
 
-            <h3>4.2 激进策略：K=24（全时段）</h3>
-            <p>追求累计收益最大，但效率低（2.47元/小时），适合算力充足、追求规模的场景。</p>
+            <h3>5.2 激进策略：全时段 24h</h3>
+            <p>追求累计收益最大（1719 元 vs 1512 元，+14%），收益更平滑（亏损日 41%、日收益 std 仅 6.8），但单位时间效率低（2.47 元/h）。适合算力充足、追求规模且能承受全时段监控成本的场景。</p>
+
+            <h3>5.3 仓位与止损（无论选哪种时段）</h3>
+            <p>鉴于收益高度依赖少数极端日（Top3 天占 56%）、且近半数交易日亏损，建议：按 Bootstrap 下界（~3 元/h）而非均值（7.43）做保守收益预期；对单日回撤设止损阈值；对爬坡时段（9-11h、13-15h）可适度加仓，正午 12h 与夜间减仓或不做。</p>
 
             <!-- 风险提示 -->
-            <h2>五、风险与限制</h2>
+            <h2>六、风险与限制</h2>
             <ul style="margin-left: 24px; color: #555;">
-                <li><strong>样本期局限</strong>：仅覆盖秋冬2个月（11-12月），春夏季光伏模式可能不同，需持续验证</li>
-                <li><strong>电网调度变化</strong>：若增加储能调峰或调整光伏规则，中午价格崩塌可能缓解，建议<span class="highlight">按季度重新校准</span></li>
-                <li><strong>模型衰减</strong>：需监控长期性能，斩杀线法会自动剔除失效时段</li>
-                <li><strong>极端事件</strong>：黑天鹅事件未在历史数据体现，建议设置止损阈值</li>
+                <li><strong>收益高度集中</strong>：Top3 交易日贡献 56% 收益，剔除最好的 4 天即跌破全时段基准。单月复现性存疑，不能按均值 7.43 做收益预期</li>
+                <li><strong>近半数交易日亏损</strong>：45% 的日亏损、逐时胜率仅 58.6%，必须配合仓位与止损，不是低风险策略</li>
+                <li><strong>样本期局限</strong>：仅覆盖秋冬 2 个月（11-12 月），且验证集/测试集各仅 29 天。春夏季光伏更强、时窗更宽，模式可能不同，需持续验证</li>
+                <li><strong>时段边界季节漂移</strong>：12 月日出推迟已使 8h 从有效退化为无效。建议<span class="highlight">按季度重新校准交易时窗</span>，尤其是早晚边缘时段</li>
+                <li><strong>电网调度变化</strong>：若增加储能调峰或调整光伏消纳规则，中午价格崩塌可能缓解，收益基础随之改变</li>
+                <li><strong>极端事件</strong>：黑天鹅事件未在历史数据体现，务必设置止损阈值</li>
             </ul>
 
             <!-- 单位说明 -->
-            <h2>六、附录</h2>
+            <h2>七、附录</h2>
             <p><strong>单位说明</strong>：</p>
             <ul style="margin-left: 24px; color: #555;">
                 <li>电价单位：<code>元/MWh</code>（元每兆瓦时），1 MWh = 1000度，400元/MWh = 0.4元/度</li>
                 <li>收益单位：<code>元/MWh</code>（每交易1MWh电量的收益）</li>
                 <li>实际收益 = 单位收益 × 交易电量（MW）</li>
             </ul>
+            <p><strong>指标口径</strong>：</p>
+            <ul style="margin-left: 24px; color: #555;">
+                <li>收益 <code>benefit = |日前价 − 实时价| − |XGB预测 − 实时价|</code>，正值表示 XGB 相对日前价的优势</li>
+                <li>改进率 <code>= 1 − XGB误差 / 日前误差</code>，消除误差基数、衡量相对纠错能力</li>
+                <li>Bootstrap 95% CI：对逐时收益重采样 5000 次得均值分布的 2.5/97.5 分位（分布右偏，不用正态近似）</li>
+            </ul>
 
-            <p><strong>数据来源</strong>：<code>outputs/metrics.pkl</code>（验证集11月+测试集12月，共696×2小时）</p>
-            <p><strong>分析脚本</strong>：<code>analysis_daily_errors/topk_hour_selection.py</code></p>
-            <p><strong>图表文件</strong>：<code>analysis_daily_errors/topk_hour_selection/topk_hour_selection.png</code></p>
+            <p><strong>数据来源</strong>：<code>outputs/metrics.pkl</code>（验证集11月+测试集12月，共696×2小时）；光伏/负荷取 <code>outputs/cleaned_data.pkl</code> 的 _实际 列（事后归因，不参与建模）</p>
+            <p><strong>分析脚本</strong>：<code>analysis_daily_errors/topk_hour_selection.py</code>（时段选择）、<code>analysis_daily_errors/topk_robustness.py</code>（稳健性检验）</p>
+            <p><strong>图表文件</strong>：<code>topk_hour_selection/topk_hour_selection.png</code>、<code>topk_robustness/topk_robustness.png</code></p>
         </div>
 
         <footer>
-            <p><strong>结论</strong>：验证集斩杀线法成功识别出7个高效时段（8-15h），测试集验证效率提升3倍，策略具有良好的跨月泛化能力和物理可解释性。</p>
+            <p><strong>结论</strong>：白天爬坡时段（9-15h）存在光伏驱动的结构性收益机会，测试集单位时间效率约为全时段 3 倍；但收益高度集中、45% 交易日亏损，且复杂的斩杀线法与朴素固定窗 9-15h 几乎等效。推荐直接采用固定窗 9-15h，配合仓位与止损，并按季度校准时窗。</p>
             <p style="margin-top: 12px; font-size: 12px; color: #9ca3af;">
                 本报告基于历史数据分析，不构成投资建议。实际交易需结合实时市场情况和风险管理。
             </p>

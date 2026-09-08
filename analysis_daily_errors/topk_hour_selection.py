@@ -18,7 +18,10 @@ from matplotlib import font_manager
 
 
 def setup_font():
-    for name in ["PingFang HK", "PingFang SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", "SimHei"]:
+    # macOS 的 PingFang.ttc 首个字面缺少部分简体字形（如"杀""远"），优先级下调，
+    # 改由 Hiragino Sans GB / Arial Unicode MS 兜底，避免图中出现方框
+    for name in ["Hiragino Sans GB", "Arial Unicode MS", "Noto Sans CJK SC",
+                 "WenQuanYi Micro Hei", "SimHei", "STHeiti", "PingFang HK"]:
         try:
             f = font_manager.findfont(name, fallback_to_default=False)
             if f and (f.lower().endswith(".ttf") or f.lower().endswith(".otf") or ".ttc" in f.lower()):
@@ -116,9 +119,6 @@ def main():
         xgb_err=("xgb_err", "mean"),
         benefit=("benefit", "mean"),
     ).reset_index()
-    test_hourly_stats["spread"] = test.groupby("hour").apply(
-        lambda g: (g["da"] - g["y_true"]).abs().mean()
-    ).values
 
     print("[4/4] 绘图")
     plot_topk_curves(res, optimal_k, val_mean_all, test_mean_all,
@@ -243,9 +243,6 @@ def plot_topk_curves(res, optimal_k, val_mean_all, test_mean_all,
     plt.savefig(os.path.join(out_dir, "topk_hour_selection.png"), dpi=120, bbox_inches="tight")
     plt.close()
     print(f"      已保存: topk_hour_selection.png")
-
-
-PLACEHOLDER_PLOT = True
 
 
 if __name__ == "__main__":
